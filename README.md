@@ -80,22 +80,27 @@ npm run preview # serve o build localmente para conferir
 ```
 
 `dist/` é um site estático puro — pode ser publicado em qualquer hospedagem
-de front-end (Vercel, Netlify, Cloudflare Pages, um bucket S3 com CDN etc.).
-Lembre de configurar lá as mesmas variáveis `VITE_SUPABASE_URL` e
-`VITE_SUPABASE_ANON_KEY` usadas no `.env.local`.
+de front-end. Lembre de configurar lá as mesmas variáveis `VITE_SUPABASE_URL`
+e `VITE_SUPABASE_ANON_KEY` usadas no `.env.local`.
 
-### Vercel
+### GitHub Pages
 
-O projeto está ligado ao repositório do GitHub: todo push na `main` gera um
-deploy de produção. O `vercel.json` na raiz faz o rewrite de todas as rotas
-para `index.html` (necessário para o React Router).
+O site é publicado em **https://opedroofelix-coder.github.io/maniadepipa/**
+pelo workflow `.github/workflows/deploy.yml`: todo push na `main` faz o build e
+o deploy. Detalhes:
 
-As variáveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` ficam em
-**Project → Settings → Environment Variables** (Production e Preview). Após
-alterá-las é preciso fazer um novo deploy, pois o Vite as embute no build.
+- `base: '/maniadepipa/'` no `vite.config.ts` e `basename` no `BrowserRouter`
+  fazem o app funcionar no subcaminho do Pages. Se o repositório for renomeado,
+  ajuste o `base`.
+- O workflow copia `index.html` para `404.html` para que rotas como `/vendas`
+  funcionem ao recarregar a página (o Pages não tem rewrite de SPA).
+- As variáveis `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY` ficam em
+  **Settings → Secrets and variables → Actions** do repositório. Após
+  alterá-las, rode o workflow de novo (aba Actions → Run workflow), pois o
+  Vite as embute no build.
 
-No Supabase, adicione a URL de produção da Vercel em **Authentication → URL
-Configuration** (Site URL e Redirect URLs).
+No Supabase, adicione a URL do site em **Authentication → URL Configuration**
+(Site URL e Redirect URLs).
 
 ## Como o fluxo de venda funciona
 
