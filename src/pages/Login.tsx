@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { Button, Input, Label } from '../components/ui'
+import { Button, Input, Label, Loader } from '../components/ui'
 import logo from '../assets/logo.png'
 
 export function Login() {
@@ -11,7 +11,11 @@ export function Login() {
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  if (!loading && session) {
+  if (loading) {
+    return <Loader fullScreen />
+  }
+
+  if (session) {
     return <Navigate to="/" replace />
   }
 

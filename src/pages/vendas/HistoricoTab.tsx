@@ -10,6 +10,7 @@ import {
   EmptyState,
   Input,
   Label,
+  Loader,
   TableScroll,
   formatCurrency,
 } from '../../components/ui'
@@ -93,7 +94,7 @@ export function HistoricoTab() {
       {error && <p className="mb-3 text-sm text-[#d03b3b]">{error}</p>}
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : sales.length === 0 ? (
         <EmptyState message="Nenhuma venda no período selecionado." />
       ) : (

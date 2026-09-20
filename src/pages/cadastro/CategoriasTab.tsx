@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Category } from '../../types/database'
-import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Modal } from '../../components/ui'
+import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Loader, Modal } from '../../components/ui'
 
 export function CategoriasTab() {
   const fieldId = useId()
@@ -73,7 +73,7 @@ export function CategoriasTab() {
       {listError && <p className="mb-3 text-sm text-[#d03b3b]">{listError}</p>}
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : categories.length === 0 ? (
         <EmptyState message="Nenhuma categoria cadastrada ainda." />
       ) : (

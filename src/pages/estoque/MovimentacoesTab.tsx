@@ -13,6 +13,7 @@ import {
   EmptyState,
   Input,
   Label,
+  Loader,
   Modal,
   Select,
   TableScroll,
@@ -117,7 +118,7 @@ export function MovimentacoesTab() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : movements.length === 0 ? (
         <EmptyState message="Nenhuma movimentação registrada ainda." />
       ) : (

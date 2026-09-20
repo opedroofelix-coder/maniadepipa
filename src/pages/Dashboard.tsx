@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { eachDayOfInterval, format, isValid, parseISO } from 'date-fns'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
-import { Button, Card, Input, Label, PageHeader, StatTile, formatCurrency } from '../components/ui'
+import { Button, Card, Input, Label, Loader, PageHeader, StatTile, formatCurrency } from '../components/ui'
 
 interface DayPoint {
   date: string
@@ -178,7 +178,7 @@ export function Dashboard() {
       </Card>
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : (
         <>
           <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">

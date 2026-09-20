@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { downloadCsv } from '../../lib/csv'
 import { formatQuantity } from '../../lib/number'
 import type { Product } from '../../types/database'
-import { Badge, Button, Card, EmptyState, StatTile, TableScroll, formatCurrency } from '../../components/ui'
+import { Badge, Button, Card, EmptyState, Loader, StatTile, TableScroll, formatCurrency } from '../../components/ui'
 
 export function RelatorioEstoque() {
   const [products, setProducts] = useState<Product[]>([])
@@ -46,7 +46,7 @@ export function RelatorioEstoque() {
     downloadCsv('estoque.csv', rows)
   }
 
-  if (loading) return <p className="text-sm text-neutral-500">Carregando…</p>
+  if (loading) return <Loader />
 
   return (
     <div>

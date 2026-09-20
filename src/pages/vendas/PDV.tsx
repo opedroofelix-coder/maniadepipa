@@ -12,6 +12,7 @@ import {
   IconButton,
   Input,
   Label,
+  Loader,
   Modal,
   Select,
   TableScroll,
@@ -359,7 +360,7 @@ export function PDV() {
   }
 
   if (session === undefined) {
-    return <p className="text-sm text-neutral-500">Carregando…</p>
+    return <Loader />
   }
 
   const cartIsEmpty = cart.length === 0

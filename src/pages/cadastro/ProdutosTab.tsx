@@ -13,6 +13,7 @@ import {
   IconButton,
   Input,
   Label,
+  Loader,
   Modal,
   Select,
   TableScroll,
@@ -182,7 +183,7 @@ export function ProdutosTab() {
       {listError && <p className="mb-3 text-sm text-[#d03b3b]">{listError}</p>}
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : filtered.length === 0 ? (
         <EmptyState message="Nenhum produto encontrado." />
       ) : (

@@ -4,7 +4,7 @@ import { Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { downloadCsv } from '../../lib/csv'
 import type { PaymentMethod, Sale } from '../../types/database'
-import { Button, Card, EmptyState, Input, Label, StatTile, formatCurrency } from '../../components/ui'
+import { Button, Card, EmptyState, Input, Label, Loader, StatTile, formatCurrency } from '../../components/ui'
 
 type SaleWithCustomer = Sale & { customers: { name: string } | null }
 
@@ -83,7 +83,7 @@ export function RelatorioVendas() {
       </Card>
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : (
         <>
           <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">

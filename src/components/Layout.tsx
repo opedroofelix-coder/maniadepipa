@@ -4,7 +4,7 @@ import { LayoutDashboard, ShoppingCart, Package, ClipboardList, BarChart3, LogOu
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
 import type { Role } from '../types/database'
-import { Button } from './ui'
+import { Button, Loader } from './ui'
 import logo from '../assets/logo.png'
 
 interface NavItem {
@@ -42,7 +42,7 @@ export function Layout() {
   }, [menuOpen])
 
   if (loading) {
-    return <div className="flex h-screen items-center justify-center text-sm text-neutral-500">Carregando…</div>
+    return <Loader fullScreen />
   }
 
   // sessão válida mas o perfil não carregou: mostrar o erro em vez de devolver

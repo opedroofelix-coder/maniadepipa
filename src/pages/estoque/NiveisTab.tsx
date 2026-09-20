@@ -3,7 +3,7 @@ import { AlertTriangle, Search } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { formatQuantity } from '../../lib/number'
 import type { Product } from '../../types/database'
-import { Badge, Card, EmptyState, Input, TableScroll } from '../../components/ui'
+import { Badge, Card, EmptyState, Input, Loader, TableScroll } from '../../components/ui'
 
 export function NiveisTab() {
   const [products, setProducts] = useState<Product[]>([])
@@ -56,7 +56,7 @@ export function NiveisTab() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : filtered.length === 0 ? (
         <EmptyState message="Nenhum produto encontrado." />
       ) : (

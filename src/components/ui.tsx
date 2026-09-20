@@ -1,6 +1,7 @@
 import { forwardRef, useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 import clsx from 'clsx'
+import logo from '../assets/logo.png'
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
@@ -278,6 +279,27 @@ export function ConfirmDialog({
 
 export function EmptyState({ message }: { message: string }) {
   return <div className="py-10 text-center text-sm text-neutral-500">{message}</div>
+}
+
+/**
+ * Carregando, com a logo da loja pulsando.
+ * `fullScreen` cobre a tela inteira (abertura do app); sem ele, ocupa só a
+ * área de conteúdo da página ou da aba.
+ */
+export function Loader({ fullScreen = false, label = 'Carregando…' }: { fullScreen?: boolean; label?: string }) {
+  return (
+    <div
+      className={clsx(
+        'flex flex-col items-center justify-center gap-4',
+        fullScreen ? 'h-screen bg-[#f9f9f7]' : 'py-16',
+      )}
+    >
+      <img src={logo} alt="" className={clsx('logo-pulse object-contain', fullScreen ? 'h-20 w-20' : 'h-12 w-12')} />
+      <p role="status" className="text-sm text-neutral-500">
+        {label}
+      </p>
+    </div>
+  )
 }
 
 export function StatTile({

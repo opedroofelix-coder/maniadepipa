@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Customer } from '../../types/database'
-import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Modal } from '../../components/ui'
+import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Loader, Modal } from '../../components/ui'
 
 const emptyForm = { id: '', name: '', phone: '', email: '', document: '', notes: '' }
 
@@ -109,7 +109,7 @@ export function ClientesTab() {
       {listError && <p className="mb-3 text-sm text-[#d03b3b]">{listError}</p>}
 
       {loading ? (
-        <p className="text-sm text-neutral-500">Carregando…</p>
+        <Loader />
       ) : filtered.length === 0 ? (
         <EmptyState message="Nenhum cliente cadastrado ainda." />
       ) : (

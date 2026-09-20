@@ -30,3 +30,37 @@ body {
 * {
   box-sizing: border-box;
 }
+
+/* Logo pulsando nos estados de carregamento (ver <Loader> em components/ui). */
+@keyframes logo-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.9);
+  }
+}
+
+.logo-pulse {
+  animation: logo-pulse 1.2s ease-in-out infinite;
+}
+
+/* Sem o "pisca": quem pediu menos movimento vê só uma variação suave de opacidade. */
+@keyframes logo-fade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo-pulse {
+    animation: logo-fade 2.5s ease-in-out infinite;
+  }
+}
