@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Search } from 'lucide-react'
+import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Customer } from '../../types/database'
 import { Button, Card, EmptyState, Input, Label, Modal } from '../../components/ui'
@@ -13,6 +13,7 @@ export function ClientesTab() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -35,6 +36,17 @@ export function ClientesTab() {
     setForm({ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', document: c.document ?? '', notes: c.notes ?? '' })
     setError(null)
     setOpen(true)
+  }
+
+  async function handleDelete(c: Customer) {
+    if (!confirm(`Excluir o cliente "${c.name}"? As vendas antigas dele ficam sem cliente vinculado.`)) return
+    setListError(null)
+    const { error } = await supabase.from('customers').delete().eq('id', c.id)
+    if (error) {
+      setListError('Não foi possível excluir o cliente.')
+      return
+    }
+    load()
   }
 
   async function handleSave() {
@@ -75,6 +87,8 @@ export function ClientesTab() {
         </Button>
       </div>
 
+      {listError && <p className="mb-3 text-sm text-[#d03b3b]">{listError}</p>}
+
       {loading ? (
         <p className="text-sm text-neutral-500">Carregando…</p>
       ) : filtered.length === 0 ? (
@@ -87,9 +101,14 @@ export function ClientesTab() {
                 <p className="text-sm font-medium text-neutral-900">{c.name}</p>
                 <p className="text-xs text-neutral-500">{[c.phone, c.email].filter(Boolean).join(' · ') || '—'}</p>
               </div>
-              <button onClick={() => openEdit(c)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
-                <Pencil size={16} />
-              </button>
+              <div className="flex items-center gap-3">
+                <button onClick={() => openEdit(c)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
+                  <Pencil size={16} />
+                </button>
+                <button onClick={() => handleDelete(c)} className="text-neutral-400 hover:text-[#d03b3b]" aria-label="Excluir">
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </li>
           ))}
         </ul>

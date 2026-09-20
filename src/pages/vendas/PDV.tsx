@@ -3,12 +3,17 @@ import { Minus, Plus, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import type { CashSession, Customer, PaymentMethod, Product, SimplePaymentMethod } from '../../types/database'
-import { Button, Card, Input, Label, Select, formatCurrency } from '../../components/ui'
+import { Badge, Button, Card, Input, Label, Modal, Select, formatCurrency } from '../../components/ui'
 import { CashSessionBar } from './CashSessionBar'
 
 interface CartLine {
-  product: Product
-  quantity: number
+  id: string
+  productId: string | null // null = item avulso (Diversos), não movimenta estoque
+  description: string
+  unit: string
+  quantity: string // string enquanto o caixa digita, como discount e paymentLines
+  unitPrice: string
+  costPrice: number // snapshot do custo no momento da venda
 }
 
 interface PaymentLine {
@@ -24,6 +29,12 @@ const PAYMENT_LABEL: Record<PaymentMethod, string> = {
   misto: 'Misto',
 }
 
+const emptyAvulso = { description: 'Diversos', unitPrice: '', quantity: '1' }
+
+function lineTotal(line: CartLine) {
+  return (Number(line.quantity) || 0) * (Number(line.unitPrice) || 0)
+}
+
 export function PDV() {
   const { profile } = useAuth()
   const [session, setSession] = useState<CashSession | null | undefined>(undefined)
@@ -36,6 +47,9 @@ export function PDV() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('dinheiro')
   const [amountReceived, setAmountReceived] = useState('')
   const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([{ method: 'dinheiro', amount: '' }])
+  const [avulsoOpen, setAvulsoOpen] = useState(false)
+  const [avulso, setAvulso] = useState(emptyAvulso)
+  const [avulsoError, setAvulsoError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [lastReceipt, setLastReceipt] = useState<{ total: number; change: number } | null>(null)
@@ -74,30 +88,88 @@ export function PDV() {
 
   function addToCart(product: Product) {
     setCart((prev) => {
-      const existing = prev.find((line) => line.product.id === product.id)
+      // só agrupa se o preço da linha ainda for o do cadastro: preço negociado fica em linha separada
+      const existing = prev.find((line) => line.productId === product.id && Number(line.unitPrice) === product.sale_price)
       if (existing) {
-        return prev.map((line) => (line.product.id === product.id ? { ...line, quantity: line.quantity + 1 } : line))
+        return prev.map((line) =>
+          line.id === existing.id ? { ...line, quantity: String((Number(line.quantity) || 0) + 1) } : line,
+        )
       }
-      return [...prev, { product, quantity: 1 }]
+      return [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          productId: product.id,
+          description: product.name,
+          unit: product.unit,
+          quantity: '1',
+          unitPrice: String(product.sale_price),
+          costPrice: product.cost_price,
+        },
+      ]
     })
     setSearch('')
     setResults([])
     searchInputRef.current?.focus()
   }
 
-  function updateQuantity(productId: string, quantity: number) {
-    if (quantity <= 0) {
-      setCart((prev) => prev.filter((l) => l.product.id !== productId))
+  function updateLine(id: string, patch: Partial<CartLine>) {
+    setCart((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)))
+  }
+
+  function stepQuantity(id: string, delta: number) {
+    setCart((prev) => {
+      const line = prev.find((l) => l.id === id)
+      if (!line) return prev
+      const next = (Number(line.quantity) || 0) + delta
+      if (next <= 0) return prev.filter((l) => l.id !== id)
+      return prev.map((l) => (l.id === id ? { ...l, quantity: String(next) } : l))
+    })
+  }
+
+  function removeLine(id: string) {
+    setCart((prev) => prev.filter((l) => l.id !== id))
+  }
+
+  function openAvulso() {
+    setAvulso(emptyAvulso)
+    setAvulsoError(null)
+    setAvulsoOpen(true)
+  }
+
+  function addAvulso() {
+    const description = avulso.description.trim()
+    const price = Number(avulso.unitPrice)
+    const quantity = Number(avulso.quantity)
+    if (!description) {
+      setAvulsoError('Informe a descrição do item.')
       return
     }
-    setCart((prev) => prev.map((l) => (l.product.id === productId ? { ...l, quantity } : l)))
+    if (!avulso.unitPrice.trim() || !Number.isFinite(price) || price < 0) {
+      setAvulsoError('Informe um valor válido.')
+      return
+    }
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      setAvulsoError('A quantidade precisa ser maior que zero.')
+      return
+    }
+    setCart((prev) => [
+      ...prev,
+      {
+        id: crypto.randomUUID(),
+        productId: null,
+        description,
+        unit: 'un',
+        quantity: String(quantity),
+        unitPrice: String(price),
+        costPrice: 0,
+      },
+    ])
+    setAvulsoOpen(false)
+    searchInputRef.current?.focus()
   }
 
-  function removeLine(productId: string) {
-    setCart((prev) => prev.filter((l) => l.product.id !== productId))
-  }
-
-  const subtotal = useMemo(() => cart.reduce((sum, l) => sum + l.product.sale_price * l.quantity, 0), [cart])
+  const subtotal = useMemo(() => cart.reduce((sum, l) => sum + lineTotal(l), 0), [cart])
   const total = Math.max(subtotal - (Number(discount) || 0), 0)
   const received = Number(amountReceived) || 0
   const change = paymentMethod === 'dinheiro' ? Math.max(received - total, 0) : 0
@@ -136,6 +208,13 @@ export function PDV() {
       setError('Adicione ao menos um produto.')
       return
     }
+    const invalidLine = cart.find(
+      (l) => !l.description.trim() || !((Number(l.quantity) || 0) > 0) || !((Number(l.unitPrice) || 0) >= 0),
+    )
+    if (invalidLine) {
+      setError(`Confira a quantidade e o preço de "${invalidLine.description.trim() || 'item sem descrição'}".`)
+      return
+    }
     if (paymentMethod === 'dinheiro' && received < total) {
       setError('Valor recebido é menor que o total.')
       return
@@ -171,12 +250,12 @@ export function PDV() {
 
     const itemsPayload = cart.map((l) => ({
       sale_id: sale.id,
-      product_id: l.product.id,
-      description: l.product.name,
-      quantity: l.quantity,
-      unit_price: l.product.sale_price,
-      cost_price_at_sale: l.product.cost_price,
-      subtotal: l.product.sale_price * l.quantity,
+      product_id: l.productId,
+      description: l.description.trim(),
+      quantity: Number(l.quantity),
+      unit_price: Number(l.unitPrice),
+      cost_price_at_sale: l.costPrice,
+      subtotal: lineTotal(l),
     }))
     const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload)
 
@@ -208,34 +287,39 @@ export function PDV() {
       <div className="grid grid-cols-3 gap-6">
         <div className="col-span-2">
           <Card>
-            <div className="relative">
-              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-              <Input
-                ref={searchInputRef}
-                placeholder="Buscar produto por nome ou código…"
-                className="pl-10 text-base"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                disabled={!session}
-                autoFocus
-              />
-              {results.length > 0 && (
-                <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
-                  {results.map((p) => (
-                    <button
-                      key={p.id}
-                      onClick={() => addToCart(p)}
-                      className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-neutral-50"
-                    >
-                      <span>
-                        <span className="font-medium text-neutral-900">{p.name}</span>
-                        {p.code && <span className="ml-2 text-xs text-neutral-400">{p.code}</span>}
-                      </span>
-                      <span className="text-neutral-600">{formatCurrency(p.sale_price)}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+            <div className="flex items-start gap-3">
+              <div className="relative flex-1">
+                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <Input
+                  ref={searchInputRef}
+                  placeholder="Buscar produto por nome ou código…"
+                  className="pl-10 text-base"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  disabled={!session}
+                  autoFocus
+                />
+                {results.length > 0 && (
+                  <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
+                    {results.map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => addToCart(p)}
+                        className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-neutral-50"
+                      >
+                        <span>
+                          <span className="font-medium text-neutral-900">{p.name}</span>
+                          {p.code && <span className="ml-2 text-xs text-neutral-400">{p.code}</span>}
+                        </span>
+                        <span className="text-neutral-600">{formatCurrency(p.sale_price)}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <Button variant="secondary" onClick={openAvulso} disabled={!session} className="shrink-0 py-2.5">
+                <Plus size={16} /> Diversos
+              </Button>
             </div>
 
             <div className="mt-5">
@@ -254,23 +338,50 @@ export function PDV() {
                   </thead>
                   <tbody className="divide-y divide-neutral-100">
                     {cart.map((l) => (
-                      <tr key={l.product.id}>
-                        <td className="py-2.5 pr-3 font-medium text-neutral-900">{l.product.name}</td>
-                        <td className="py-2.5 pr-3 text-right text-neutral-600">{formatCurrency(l.product.sale_price)}</td>
+                      <tr key={l.id}>
+                        <td className="py-2.5 pr-3">
+                          <span className="font-medium text-neutral-900">{l.description}</span>
+                          {l.productId === null ? (
+                            <span className="ml-2">
+                              <Badge tone="brand">avulso</Badge>
+                            </span>
+                          ) : (
+                            <span className="ml-2 text-xs text-neutral-400">{l.unit}</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <Input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={l.unitPrice}
+                            onChange={(e) => updateLine(l.id, { unitPrice: e.target.value })}
+                            className="ml-auto w-24 text-right"
+                            aria-label={`Preço de ${l.description}`}
+                          />
+                        </td>
                         <td className="py-2.5 pr-3">
                           <div className="flex items-center justify-center gap-2">
-                            <button onClick={() => updateQuantity(l.product.id, l.quantity - 1)} className="text-neutral-400 hover:text-neutral-700">
+                            <button onClick={() => stepQuantity(l.id, -1)} className="text-neutral-400 hover:text-neutral-700" aria-label="Diminuir">
                               <Minus size={14} />
                             </button>
-                            <span className="w-8 text-center">{l.quantity}</span>
-                            <button onClick={() => updateQuantity(l.product.id, l.quantity + 1)} className="text-neutral-400 hover:text-neutral-700">
+                            <Input
+                              type="number"
+                              step="0.001"
+                              min="0"
+                              value={l.quantity}
+                              onChange={(e) => updateLine(l.id, { quantity: e.target.value })}
+                              className="w-20 text-center"
+                              aria-label={`Quantidade de ${l.description}`}
+                            />
+                            <button onClick={() => stepQuantity(l.id, 1)} className="text-neutral-400 hover:text-neutral-700" aria-label="Aumentar">
                               <Plus size={14} />
                             </button>
                           </div>
                         </td>
-                        <td className="py-2.5 pr-3 text-right font-medium text-neutral-900">{formatCurrency(l.product.sale_price * l.quantity)}</td>
+                        <td className="py-2.5 pr-3 text-right font-medium text-neutral-900">{formatCurrency(lineTotal(l))}</td>
                         <td className="py-2.5 text-right">
-                          <button onClick={() => removeLine(l.product.id)} className="text-neutral-400 hover:text-[#d03b3b]">
+                          <button onClick={() => removeLine(l.id)} className="text-neutral-400 hover:text-[#d03b3b]" aria-label="Remover">
                             <Trash2 size={16} />
                           </button>
                         </td>
@@ -388,6 +499,51 @@ export function PDV() {
           </Card>
         </div>
       </div>
+
+      <Modal open={avulsoOpen} onClose={() => setAvulsoOpen(false)} title="Item avulso (Diversos)">
+        <div className="space-y-4">
+          <div>
+            <Label>Descrição</Label>
+            <Input
+              value={avulso.description}
+              onChange={(e) => setAvulso({ ...avulso, description: e.target.value })}
+              autoFocus
+              onFocus={(e) => e.target.select()}
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label>Valor unitário (R$)</Label>
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={avulso.unitPrice}
+                onChange={(e) => setAvulso({ ...avulso, unitPrice: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addAvulso()}
+              />
+            </div>
+            <div>
+              <Label>Quantidade</Label>
+              <Input
+                type="number"
+                step="0.001"
+                min="0"
+                value={avulso.quantity}
+                onChange={(e) => setAvulso({ ...avulso, quantity: e.target.value })}
+                onKeyDown={(e) => e.key === 'Enter' && addAvulso()}
+              />
+            </div>
+          </div>
+          {avulsoError && <p className="text-sm text-[#d03b3b]">{avulsoError}</p>}
+          <p className="text-xs text-neutral-400">
+            Item avulso não é cadastrado e não movimenta estoque. O custo entra como zero, então ele conta como lucro cheio nos relatórios.
+          </p>
+          <Button className="w-full" onClick={addAvulso}>
+            Adicionar ao carrinho
+          </Button>
+        </div>
+      </Modal>
     </div>
   )
 }

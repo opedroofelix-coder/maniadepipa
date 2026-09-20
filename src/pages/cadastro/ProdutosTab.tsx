@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Plus, Pencil, Search } from 'lucide-react'
+import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Category, Product } from '../../types/database'
 import { Badge, Button, Card, EmptyState, Input, Label, Modal, Select, formatCurrency } from '../../components/ui'
@@ -27,6 +27,7 @@ export function ProdutosTab() {
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -64,6 +65,32 @@ export function ProdutosTab() {
     })
     setError(null)
     setOpen(true)
+  }
+
+  async function handleDelete(p: Product) {
+    if (!confirm(`Excluir o produto "${p.name}"? Esta ação não pode ser desfeita.`)) return
+    setListError(null)
+    const { error } = await supabase.from('products').delete().eq('id', p.id)
+    if (!error) {
+      load()
+      return
+    }
+    // sale_items.product_id referencia products sem on delete: produto já vendido não sai.
+    const isInUse = error.code === '23503' || error.message.includes('foreign key')
+    if (!isInUse) {
+      setListError('Não foi possível excluir o produto.')
+      return
+    }
+    if (!confirm('Este produto já tem vendas registradas e não pode ser excluído. Deseja inativá-lo? Ele deixa de aparecer no PDV.')) return
+    const { error: updateError } = await supabase
+      .from('products')
+      .update({ active: false, updated_at: new Date().toISOString() })
+      .eq('id', p.id)
+    if (updateError) {
+      setListError('Não foi possível inativar o produto.')
+      return
+    }
+    load()
   }
 
   async function handleSave() {
@@ -114,6 +141,8 @@ export function ProdutosTab() {
         </Button>
       </div>
 
+      {listError && <p className="mb-3 text-sm text-[#d03b3b]">{listError}</p>}
+
       {loading ? (
         <p className="text-sm text-neutral-500">Carregando…</p>
       ) : filtered.length === 0 ? (
@@ -150,9 +179,14 @@ export function ProdutosTab() {
                     <Badge tone={p.active ? 'good' : 'neutral'}>{p.active ? 'Ativo' : 'Inativo'}</Badge>
                   </td>
                   <td className="py-2.5 text-right">
-                    <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
-                      <Pencil size={16} />
-                    </button>
+                    <div className="flex items-center justify-end gap-3">
+                      <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
+                        <Pencil size={16} />
+                      </button>
+                      <button onClick={() => handleDelete(p)} className="text-neutral-400 hover:text-[#d03b3b]" aria-label="Excluir">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -172,6 +206,7 @@ export function ProdutosTab() {
             <Select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
               <option value="un">un</option>
               <option value="kg">kg</option>
+              <option value="m">m</option>
               <option value="cx">cx</option>
               <option value="l">l</option>
               <option value="pct">pct</option>
