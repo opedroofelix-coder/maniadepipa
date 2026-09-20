@@ -1,8 +1,23 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { formatQuantity, toDecimal } from '../../lib/number'
 import type { Category, Product } from '../../types/database'
-import { Badge, Button, Card, EmptyState, Input, Label, Modal, Select, formatCurrency } from '../../components/ui'
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  DecimalInput,
+  EmptyState,
+  IconButton,
+  Input,
+  Label,
+  Modal,
+  Select,
+  TableScroll,
+  formatCurrency,
+} from '../../components/ui'
 
 type ProductWithCategory = Product & { categories: { name: string } | null }
 
@@ -20,14 +35,18 @@ const emptyForm = {
 }
 
 export function ProdutosTab() {
+  const fieldId = useId()
   const [products, setProducts] = useState<ProductWithCategory[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [toDelete, setToDelete] = useState<Product | null>(null)
+  const [toDeactivate, setToDeactivate] = useState<Product | null>(null)
 
   async function load() {
     setLoading(true)
@@ -67,25 +86,32 @@ export function ProdutosTab() {
     setOpen(true)
   }
 
-  async function handleDelete(p: Product) {
-    if (!confirm(`Excluir o produto "${p.name}"? Esta ação não pode ser desfeita.`)) return
+  async function handleDelete() {
+    if (!toDelete) return
+    const product = toDelete
     setListError(null)
-    const { error } = await supabase.from('products').delete().eq('id', p.id)
-    if (!error) {
+    const { error: deleteError } = await supabase.from('products').delete().eq('id', product.id)
+    setToDelete(null)
+    if (!deleteError) {
       load()
       return
     }
-    // sale_items.product_id referencia products sem on delete: produto já vendido não sai.
-    const isInUse = error.code === '23503' || error.message.includes('foreign key')
+    // sale_items referencia products sem on delete: produto já vendido não sai
+    const isInUse = deleteError.code === '23503' || deleteError.message.includes('foreign key')
     if (!isInUse) {
       setListError('Não foi possível excluir o produto.')
       return
     }
-    if (!confirm('Este produto já tem vendas registradas e não pode ser excluído. Deseja inativá-lo? Ele deixa de aparecer no PDV.')) return
+    setToDeactivate(product)
+  }
+
+  async function handleDeactivate() {
+    if (!toDeactivate) return
     const { error: updateError } = await supabase
       .from('products')
       .update({ active: false, updated_at: new Date().toISOString() })
-      .eq('id', p.id)
+      .eq('id', toDeactivate.id)
+    setToDeactivate(null)
     if (updateError) {
       setListError('Não foi possível inativar o produto.')
       return
@@ -98,15 +124,16 @@ export function ProdutosTab() {
       setError('Informe o nome do produto.')
       return
     }
+    setSaving(true)
     const payload = {
       code: form.code.trim() || null,
       name: form.name.trim(),
       category_id: form.category_id || null,
       unit: form.unit,
-      cost_price: Number(form.cost_price) || 0,
-      sale_price: Number(form.sale_price) || 0,
-      stock_quantity: Number(form.stock_quantity) || 0,
-      min_stock: Number(form.min_stock) || 0,
+      cost_price: toDecimal(form.cost_price),
+      sale_price: toDecimal(form.sale_price),
+      stock_quantity: toDecimal(form.stock_quantity),
+      min_stock: toDecimal(form.min_stock),
       active: form.active,
       updated_at: new Date().toISOString(),
     }
@@ -115,9 +142,14 @@ export function ProdutosTab() {
       ? supabase.from('products').update(payload).eq('id', form.id)
       : supabase.from('products').insert(payload)
 
-    const { error } = await query
-    if (error) {
-      setError(error.message.includes('duplicate') ? 'Já existe um produto com esse código.' : 'Não foi possível salvar o produto.')
+    const { error: saveError } = await query
+    setSaving(false)
+    if (saveError) {
+      setError(
+        saveError.message.includes('duplicate')
+          ? 'Já existe um produto com esse código.'
+          : 'Não foi possível salvar o produto.',
+      )
       return
     }
     setOpen(false)
@@ -131,12 +163,18 @@ export function ProdutosTab() {
 
   return (
     <Card>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="relative w-72">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:w-72">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <Input placeholder="Buscar por nome ou código" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            placeholder="Buscar por nome ou código"
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Buscar produto"
+          />
         </div>
-        <Button size="sm" onClick={openCreate}>
+        <Button size="sm" onClick={openCreate} className="w-full sm:w-auto">
           <Plus size={16} /> Novo produto
         </Button>
       </div>
@@ -148,8 +186,8 @@ export function ProdutosTab() {
       ) : filtered.length === 0 ? (
         <EmptyState message="Nenhum produto encontrado." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
+        <TableScroll>
+          <table className="w-full min-w-[820px] text-left text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
                 <th className="py-2 pr-3">Código</th>
@@ -170,40 +208,50 @@ export function ProdutosTab() {
                   <td className="py-2.5 pr-3 text-neutral-600">{p.categories?.name ?? '—'}</td>
                   <td className="py-2.5 pr-3 text-right text-neutral-600">{formatCurrency(p.cost_price)}</td>
                   <td className="py-2.5 pr-3 text-right font-medium text-neutral-900">{formatCurrency(p.sale_price)}</td>
-                  <td className="py-2.5 pr-3 text-right">
-                    <span className={p.stock_quantity <= p.min_stock ? 'font-medium text-[#d03b3b]' : 'text-neutral-700'}>
-                      {p.stock_quantity} {p.unit}
+                  <td className="py-2.5 pr-3 text-right whitespace-nowrap">
+                    <span
+                      className={p.stock_quantity <= p.min_stock ? 'font-medium text-[#d03b3b]' : 'text-neutral-700'}
+                    >
+                      {formatQuantity(Number(p.stock_quantity))} {p.unit}
                     </span>
                   </td>
                   <td className="py-2.5 pr-3">
                     <Badge tone={p.active ? 'good' : 'neutral'}>{p.active ? 'Ativo' : 'Inativo'}</Badge>
                   </td>
                   <td className="py-2.5 text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <button onClick={() => openEdit(p)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
+                    <div className="flex items-center justify-end">
+                      <IconButton onClick={() => openEdit(p)} aria-label={`Editar ${p.name}`}>
                         <Pencil size={16} />
-                      </button>
-                      <button onClick={() => handleDelete(p)} className="text-neutral-400 hover:text-[#d03b3b]" aria-label="Excluir">
+                      </IconButton>
+                      <IconButton tone="danger" onClick={() => setToDelete(p)} aria-label={`Excluir ${p.name}`}>
                         <Trash2 size={16} />
-                      </button>
+                      </IconButton>
                     </div>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
+        </TableScroll>
       )}
 
       <Modal open={open} onClose={() => setOpen(false)} title={form.id ? 'Editar produto' : 'Novo produto'} wide>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <Label>Código / código de barras</Label>
-            <Input value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+            <Label htmlFor={`${fieldId}-code`}>Código / código de barras</Label>
+            <Input
+              id={`${fieldId}-code`}
+              value={form.code}
+              onChange={(e) => setForm({ ...form, code: e.target.value })}
+            />
           </div>
           <div>
-            <Label>Unidade</Label>
-            <Select value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })}>
+            <Label htmlFor={`${fieldId}-unit`}>Unidade</Label>
+            <Select
+              id={`${fieldId}-unit`}
+              value={form.unit}
+              onChange={(e) => setForm({ ...form, unit: e.target.value })}
+            >
               <option value="un">un</option>
               <option value="kg">kg</option>
               <option value="m">m</option>
@@ -212,13 +260,21 @@ export function ProdutosTab() {
               <option value="pct">pct</option>
             </Select>
           </div>
-          <div className="col-span-2">
-            <Label>Nome</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+          <div className="sm:col-span-2">
+            <Label htmlFor={`${fieldId}-name`}>Nome</Label>
+            <Input
+              id={`${fieldId}-name`}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </div>
-          <div className="col-span-2">
-            <Label>Categoria</Label>
-            <Select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
+          <div className="sm:col-span-2">
+            <Label htmlFor={`${fieldId}-category`}>Categoria</Label>
+            <Select
+              id={`${fieldId}-category`}
+              value={form.category_id}
+              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+            >
               <option value="">Sem categoria</option>
               {categories.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -228,44 +284,79 @@ export function ProdutosTab() {
             </Select>
           </div>
           <div>
-            <Label>Preço de custo</Label>
-            <Input type="number" step="0.01" min="0" value={form.cost_price} onChange={(e) => setForm({ ...form, cost_price: e.target.value })} />
+            <Label htmlFor={`${fieldId}-cost`}>Preço de custo</Label>
+            <DecimalInput
+              id={`${fieldId}-cost`}
+              value={form.cost_price}
+              onChange={(e) => setForm({ ...form, cost_price: e.target.value })}
+            />
           </div>
           <div>
-            <Label>Preço de venda</Label>
-            <Input type="number" step="0.01" min="0" value={form.sale_price} onChange={(e) => setForm({ ...form, sale_price: e.target.value })} />
+            <Label htmlFor={`${fieldId}-price`}>Preço de venda</Label>
+            <DecimalInput
+              id={`${fieldId}-price`}
+              value={form.sale_price}
+              onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
+            />
           </div>
           <div>
-            <Label>{form.id ? 'Estoque atual' : 'Estoque inicial'}</Label>
-            <Input type="number" step="0.001" min="0" value={form.stock_quantity} onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })} />
+            <Label htmlFor={`${fieldId}-stock`}>{form.id ? 'Estoque atual' : 'Estoque inicial'}</Label>
+            <DecimalInput
+              id={`${fieldId}-stock`}
+              value={form.stock_quantity}
+              onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
+            />
           </div>
           <div>
-            <Label>Estoque mínimo</Label>
-            <Input type="number" step="0.001" min="0" value={form.min_stock} onChange={(e) => setForm({ ...form, min_stock: e.target.value })} />
+            <Label htmlFor={`${fieldId}-min`}>Estoque mínimo</Label>
+            <DecimalInput
+              id={`${fieldId}-min`}
+              value={form.min_stock}
+              onChange={(e) => setForm({ ...form, min_stock: e.target.value })}
+            />
           </div>
-          <div className="col-span-2 flex items-center gap-2">
+          <div className="flex items-center gap-2 sm:col-span-2">
             <input
-              id="active"
+              id={`${fieldId}-active`}
               type="checkbox"
               checked={form.active}
               onChange={(e) => setForm({ ...form, active: e.target.checked })}
               className="h-4 w-4 rounded border-neutral-300"
             />
-            <label htmlFor="active" className="text-sm text-neutral-700">
+            <label htmlFor={`${fieldId}-active`} className="text-sm text-neutral-700">
               Produto ativo (aparece nas vendas)
             </label>
           </div>
         </div>
         {error && <p className="mt-3 text-sm text-[#d03b3b]">{error}</p>}
-        <p className="mt-3 text-xs text-neutral-400">
-          {form.id
-            ? 'Alterar o estoque aqui faz um ajuste direto. Para registrar entrada/saída com motivo, use a tela de Estoque.'
-            : ''}
-        </p>
-        <Button className="mt-4 w-full" onClick={handleSave}>
-          Salvar
+        {form.id && (
+          <p className="mt-3 text-xs text-neutral-400">
+            Alterar o estoque aqui faz um ajuste direto. Para registrar entrada/saída com motivo, use a tela de Estoque.
+          </p>
+        )}
+        <Button className="mt-4 w-full" onClick={handleSave} disabled={saving}>
+          {saving ? 'Salvando…' : 'Salvar'}
         </Button>
       </Modal>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Excluir produto"
+        message={`Excluir o produto "${toDelete?.name ?? ''}"? Esta ação não pode ser desfeita.`}
+        confirmLabel="Excluir"
+        onConfirm={handleDelete}
+        onClose={() => setToDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={toDeactivate !== null}
+        title="Produto com vendas registradas"
+        message={`"${toDeactivate?.name ?? ''}" já tem vendas registradas e não pode ser excluído, senão o histórico ficaria quebrado. Deseja inativá-lo? Ele deixa de aparecer no PDV.`}
+        confirmLabel="Inativar"
+        tone="primary"
+        onConfirm={handleDeactivate}
+        onClose={() => setToDeactivate(null)}
+      />
     </Card>
   )
 }

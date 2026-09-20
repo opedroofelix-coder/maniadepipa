@@ -1,19 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import type { Customer } from '../../types/database'
-import { Button, Card, EmptyState, Input, Label, Modal } from '../../components/ui'
+import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Modal } from '../../components/ui'
 
 const emptyForm = { id: '', name: '', phone: '', email: '', document: '', notes: '' }
 
 export function ClientesTab() {
+  const fieldId = useId()
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [toDelete, setToDelete] = useState<Customer | null>(null)
 
   async function load() {
     setLoading(true)
@@ -33,16 +36,24 @@ export function ClientesTab() {
   }
 
   function openEdit(c: Customer) {
-    setForm({ id: c.id, name: c.name, phone: c.phone ?? '', email: c.email ?? '', document: c.document ?? '', notes: c.notes ?? '' })
+    setForm({
+      id: c.id,
+      name: c.name,
+      phone: c.phone ?? '',
+      email: c.email ?? '',
+      document: c.document ?? '',
+      notes: c.notes ?? '',
+    })
     setError(null)
     setOpen(true)
   }
 
-  async function handleDelete(c: Customer) {
-    if (!confirm(`Excluir o cliente "${c.name}"? As vendas antigas dele ficam sem cliente vinculado.`)) return
+  async function handleDelete() {
+    if (!toDelete) return
     setListError(null)
-    const { error } = await supabase.from('customers').delete().eq('id', c.id)
-    if (error) {
+    const { error: deleteError } = await supabase.from('customers').delete().eq('id', toDelete.id)
+    setToDelete(null)
+    if (deleteError) {
       setListError('Não foi possível excluir o cliente.')
       return
     }
@@ -54,6 +65,7 @@ export function ClientesTab() {
       setError('Informe o nome do cliente.')
       return
     }
+    setSaving(true)
     const payload = {
       name: form.name.trim(),
       phone: form.phone.trim() || null,
@@ -64,8 +76,9 @@ export function ClientesTab() {
     const query = form.id
       ? supabase.from('customers').update(payload).eq('id', form.id)
       : supabase.from('customers').insert(payload)
-    const { error } = await query
-    if (error) {
+    const { error: saveError } = await query
+    setSaving(false)
+    if (saveError) {
       setError('Não foi possível salvar o cliente.')
       return
     }
@@ -77,12 +90,18 @@ export function ClientesTab() {
 
   return (
     <Card>
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <div className="relative w-72">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:w-72">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <Input placeholder="Buscar cliente" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input
+            placeholder="Buscar cliente"
+            className="pl-9"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Buscar cliente"
+          />
         </div>
-        <Button size="sm" onClick={openCreate}>
+        <Button size="sm" onClick={openCreate} className="w-full sm:w-auto">
           <Plus size={16} /> Novo cliente
         </Button>
       </div>
@@ -96,18 +115,20 @@ export function ClientesTab() {
       ) : (
         <ul className="divide-y divide-neutral-100">
           {filtered.map((c) => (
-            <li key={c.id} className="flex items-center justify-between py-2.5">
-              <div>
-                <p className="text-sm font-medium text-neutral-900">{c.name}</p>
-                <p className="text-xs text-neutral-500">{[c.phone, c.email].filter(Boolean).join(' · ') || '—'}</p>
+            <li key={c.id} className="flex items-center justify-between gap-2 py-1">
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-neutral-900">{c.name}</p>
+                <p className="truncate text-xs text-neutral-500">
+                  {[c.phone, c.email].filter(Boolean).join(' · ') || '—'}
+                </p>
               </div>
-              <div className="flex items-center gap-3">
-                <button onClick={() => openEdit(c)} className="text-neutral-400 hover:text-[#d6247a]" aria-label="Editar">
+              <div className="flex shrink-0 items-center">
+                <IconButton onClick={() => openEdit(c)} aria-label={`Editar ${c.name}`}>
                   <Pencil size={16} />
-                </button>
-                <button onClick={() => handleDelete(c)} className="text-neutral-400 hover:text-[#d03b3b]" aria-label="Excluir">
+                </IconButton>
+                <IconButton tone="danger" onClick={() => setToDelete(c)} aria-label={`Excluir ${c.name}`}>
                   <Trash2 size={16} />
-                </button>
+                </IconButton>
               </div>
             </li>
           ))}
@@ -117,27 +138,56 @@ export function ClientesTab() {
       <Modal open={open} onClose={() => setOpen(false)} title={form.id ? 'Editar cliente' : 'Novo cliente'}>
         <div className="space-y-4">
           <div>
-            <Label>Nome</Label>
-            <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+            <Label htmlFor={`${fieldId}-name`}>Nome</Label>
+            <Input
+              id={`${fieldId}-name`}
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+            />
           </div>
           <div>
-            <Label>Telefone</Label>
-            <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />
+            <Label htmlFor={`${fieldId}-phone`}>Telefone</Label>
+            <Input
+              id={`${fieldId}-phone`}
+              type="tel"
+              inputMode="tel"
+              value={form.phone}
+              onChange={(e) => setForm({ ...form, phone: e.target.value })}
+            />
           </div>
           <div>
-            <Label>E-mail</Label>
-            <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            <Label htmlFor={`${fieldId}-email`}>E-mail</Label>
+            <Input
+              id={`${fieldId}-email`}
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+            />
           </div>
           <div>
-            <Label>CPF/CNPJ</Label>
-            <Input value={form.document} onChange={(e) => setForm({ ...form, document: e.target.value })} />
+            <Label htmlFor={`${fieldId}-document`}>CPF/CNPJ</Label>
+            <Input
+              id={`${fieldId}-document`}
+              inputMode="numeric"
+              value={form.document}
+              onChange={(e) => setForm({ ...form, document: e.target.value })}
+            />
           </div>
           {error && <p className="text-sm text-[#d03b3b]">{error}</p>}
-          <Button className="w-full" onClick={handleSave}>
-            Salvar
+          <Button className="w-full" onClick={handleSave} disabled={saving}>
+            {saving ? 'Salvando…' : 'Salvar'}
           </Button>
         </div>
       </Modal>
+
+      <ConfirmDialog
+        open={toDelete !== null}
+        title="Excluir cliente"
+        message={`Excluir o cliente "${toDelete?.name ?? ''}"? As vendas antigas dele continuam no histórico, mas ficam sem cliente vinculado.`}
+        confirmLabel="Excluir"
+        onConfirm={handleDelete}
+        onClose={() => setToDelete(null)}
+      />
     </Card>
   )
 }

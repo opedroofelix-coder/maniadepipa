@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { format, startOfMonth } from 'date-fns'
 import { Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
@@ -6,22 +6,25 @@ import { downloadCsv } from '../../lib/csv'
 import type { PaymentMethod, Sale } from '../../types/database'
 import { Button, Card, EmptyState, Input, Label, StatTile, formatCurrency } from '../../components/ui'
 
+type SaleWithCustomer = Sale & { customers: { name: string } | null }
+
 export function RelatorioVendas() {
+  const fieldId = useId()
   const [start, setStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
   const [end, setEnd] = useState(format(new Date(), 'yyyy-MM-dd'))
-  const [sales, setSales] = useState<Sale[]>([])
+  const [sales, setSales] = useState<SaleWithCustomer[]>([])
   const [loading, setLoading] = useState(true)
 
   async function load() {
     setLoading(true)
     const { data } = await supabase
       .from('sales')
-      .select('*')
+      .select('*, customers(name)')
       .eq('status', 'completed')
       .gte('created_at', `${start}T00:00:00`)
       .lte('created_at', `${end}T23:59:59`)
       .order('created_at', { ascending: false })
-    setSales((data as Sale[]) ?? [])
+    setSales((data as unknown as SaleWithCustomer[]) ?? [])
     setLoading(false)
   }
 
@@ -41,16 +44,18 @@ export function RelatorioVendas() {
   })
 
   function exportCsv() {
-    const rows: (string | number)[][] = [['Data', 'Cliente', 'Forma de pagamento', 'Subtotal', 'Desconto', 'Total', 'Status']]
+    const rows: (string | number)[][] = [
+      ['Data', 'Cliente', 'Forma de pagamento', 'Subtotal', 'Desconto', 'Total', 'Status'],
+    ]
     sales.forEach((s) => {
       rows.push([
         format(new Date(s.created_at), 'dd/MM/yyyy HH:mm'),
-        s.customer_id ?? '',
+        s.customers?.name ?? 'Não identificado',
         s.payment_method ?? '',
-        s.subtotal,
-        s.discount,
-        s.total,
-        s.status,
+        Number(s.subtotal),
+        Number(s.discount),
+        Number(s.total),
+        s.status === 'completed' ? 'Concluída' : 'Cancelada',
       ])
     })
     downloadCsv(`vendas_${start}_a_${end}.csv`, rows)
@@ -59,16 +64,18 @@ export function RelatorioVendas() {
   return (
     <div>
       <Card className="mb-6">
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
           <div>
-            <Label>De</Label>
-            <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+            <Label htmlFor={`${fieldId}-start`}>De</Label>
+            <Input id={`${fieldId}-start`} type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </div>
           <div>
-            <Label>Até</Label>
-            <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <Label htmlFor={`${fieldId}-end`}>Até</Label>
+            <Input id={`${fieldId}-end`} type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
-          <Button onClick={load}>Filtrar</Button>
+          <Button onClick={load} disabled={loading || !start || !end || start > end}>
+            Filtrar
+          </Button>
           <Button variant="secondary" onClick={exportCsv} disabled={sales.length === 0}>
             <Download size={16} /> Exportar CSV
           </Button>
@@ -79,7 +86,7 @@ export function RelatorioVendas() {
         <p className="text-sm text-neutral-500">Carregando…</p>
       ) : (
         <>
-          <div className="mb-6 grid grid-cols-3 gap-4">
+          <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
             <StatTile label="Vendas no período" value={String(count)} />
             <StatTile label="Faturamento" value={formatCurrency(total)} />
             <StatTile label="Ticket médio" value={formatCurrency(ticket)} />
@@ -92,7 +99,7 @@ export function RelatorioVendas() {
             ) : (
               <ul className="space-y-2">
                 {Array.from(byMethod.entries()).map(([method, value]) => (
-                  <li key={method} className="flex items-center justify-between text-sm">
+                  <li key={method} className="flex items-center justify-between gap-3 text-sm">
                     <span className="capitalize text-neutral-600">{method as PaymentMethod}</span>
                     <span className="font-medium text-neutral-900">{formatCurrency(value)}</span>
                   </li>

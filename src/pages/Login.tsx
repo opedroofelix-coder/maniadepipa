@@ -25,21 +25,36 @@ export function Login() {
   }
 
   return (
-    <div className="flex h-screen items-center justify-center bg-[#f9f9f7]">
+    <div className="flex min-h-screen items-center justify-center bg-[#f9f9f7] p-4">
       <div className="w-full max-w-sm overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
         <div className="h-2 w-full bg-[linear-gradient(90deg,#ffc83c,#ff7a29,#f0384c,#d6247a,#7b3fe4,#2f6fed)]" />
-        <div className="p-8">
+        <div className="p-6 sm:p-8">
           <img src={logo} alt="Mania de Pipa" className="mx-auto mb-4 h-20 w-20 object-contain" />
           <h1 className="text-center text-xl font-semibold text-neutral-900">Mania de Pipa</h1>
           <p className="mt-1 text-center text-sm text-neutral-500">Entre com sua conta para continuar.</p>
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <Label>E-mail</Label>
-            <Input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} autoFocus />
+            <Label htmlFor="login-email">E-mail</Label>
+            <Input
+              id="login-email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoFocus
+            />
           </div>
           <div>
-            <Label>Senha</Label>
-            <Input type="password" required value={password} onChange={(e) => setPassword(e.target.value)} />
+            <Label htmlFor="login-password">Senha</Label>
+            <Input
+              id="login-password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
           </div>
           {error && <p className="text-sm text-[#d03b3b]">{error}</p>}
           <Button type="submit" className="w-full" disabled={submitting}>

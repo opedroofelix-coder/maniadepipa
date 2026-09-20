@@ -1,10 +1,10 @@
-import { forwardRef } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from 'react'
 import clsx from 'clsx'
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={clsx('rounded-xl border border-neutral-200 bg-white p-5 shadow-sm', className)}>
+    <div className={clsx('rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5', className)}>
       {children}
     </div>
   )
@@ -19,7 +19,8 @@ export function Button({
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
   size?: 'sm' | 'md' | 'lg'
 }) {
-  const base = 'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+  const base =
+    'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
   const sizes = {
     sm: 'px-3 py-1.5 text-sm',
     md: 'px-4 py-2 text-sm',
@@ -31,7 +32,34 @@ export function Button({
     danger: 'bg-[#d03b3b] text-white hover:bg-[#a82e2e]',
     ghost: 'text-neutral-700 hover:bg-neutral-100',
   }
-  return <button className={clsx(base, sizes[size], variants[variant], className)} {...props} />
+  return <button type="button" className={clsx(base, sizes[size], variants[variant], className)} {...props} />
+}
+
+/**
+ * Botão só de ícone. O padding garante o alvo de toque de 44px pedido em
+ * celular sem empurrar o layout (a margem negativa compensa).
+ */
+export function IconButton({
+  tone = 'brand',
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'brand' | 'danger' | 'neutral' }) {
+  const tones = {
+    brand: 'hover:text-[#d6247a]',
+    danger: 'hover:text-[#d03b3b]',
+    neutral: 'hover:text-neutral-700',
+  }
+  return (
+    <button
+      type="button"
+      className={clsx(
+        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition-colors disabled:opacity-40',
+        tones[tone],
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(props, ref) {
@@ -47,6 +75,17 @@ export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputE
   )
 })
 
+/**
+ * Campo numérico em formato brasileiro. Usa text + inputMode decimal em vez de
+ * type="number" para que a vírgula não seja descartada pelo navegador.
+ * Ver src/lib/number.ts.
+ */
+export const DecimalInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
+  function DecimalInput(props, ref) {
+    return <Input ref={ref} type="text" inputMode="decimal" autoComplete="off" {...props} />
+  },
+)
+
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <select
@@ -59,8 +98,12 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   )
 }
 
-export function Label({ children }: { children: ReactNode }) {
-  return <label className="mb-1 block text-xs font-medium text-neutral-600">{children}</label>
+export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
+  return (
+    <label htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-neutral-600">
+      {children}
+    </label>
+  )
 }
 
 export function Badge({
@@ -84,6 +127,8 @@ export function Badge({
   )
 }
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
 export function Modal({
   open,
   onClose,
@@ -97,19 +142,137 @@ export function Modal({
   children: ReactNode
   wide?: boolean
 }) {
+  const panelRef = useRef<HTMLDivElement>(null)
+  const previouslyFocused = useRef<HTMLElement | null>(null)
+  // onClose costuma ser uma arrow inline, ou seja, muda de identidade a cada
+  // render. Guardado num ref, o efeito depende só de `open` — senão ele
+  // rodaria a cada tecla digitada e o foco voltaria para o primeiro campo.
+  const onCloseRef = useRef(onClose)
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
+
+  useEffect(() => {
+    if (!open) return
+
+    previouslyFocused.current = document.activeElement as HTMLElement | null
+    const { overflow } = document.body.style
+    document.body.style.overflow = 'hidden'
+
+    // foca o primeiro campo (não o ✕, que vem antes no DOM)
+    const firstField = panelRef.current?.querySelector<HTMLElement>(
+      'input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])',
+    )
+    ;(firstField ?? panelRef.current)?.focus()
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        onCloseRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      // prende o Tab dentro do modal
+      const items = Array.from(panelRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? [])
+      if (items.length === 0) return
+      const first = items[0]
+      const last = items[items.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+
+    document.addEventListener('keydown', handleKeyDown, true)
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown, true)
+      document.body.style.overflow = overflow
+      previouslyFocused.current?.focus()
+    }
+  }, [open])
+
   if (!open) return null
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className={clsx('max-h-[90vh] w-full overflow-y-auto rounded-xl bg-white p-6 shadow-xl', wide ? 'max-w-2xl' : 'max-w-md')}>
-        <div className="mb-4 flex items-center justify-between">
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      onClick={onClose}
+    >
+      <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className={clsx(
+          'max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white p-5 shadow-xl outline-none sm:rounded-xl sm:p-6',
+          wide ? 'sm:max-w-2xl' : 'sm:max-w-md',
+        )}
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700" aria-label="Fechar">
+          <IconButton tone="neutral" onClick={onClose} aria-label="Fechar" className="-mr-2">
             ✕
-          </button>
+          </IconButton>
         </div>
         {children}
       </div>
     </div>
+  )
+}
+
+/**
+ * Confirmação no visual do sistema, no lugar do confirm() nativo (que trava a
+ * aba e não pode ser estilizado). Mantém o botão travado enquanto a ação roda.
+ */
+export function ConfirmDialog({
+  open,
+  title,
+  message,
+  confirmLabel = 'Confirmar',
+  cancelLabel = 'Cancelar',
+  tone = 'danger',
+  onConfirm,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  message: ReactNode
+  confirmLabel?: string
+  cancelLabel?: string
+  tone?: 'danger' | 'primary'
+  onConfirm: () => void | Promise<void>
+  onClose: () => void
+}) {
+  const [running, setRunning] = useState(false)
+
+  async function handleConfirm() {
+    setRunning(true)
+    try {
+      await onConfirm()
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <Modal open={open} onClose={running ? () => {} : onClose} title={title}>
+      <div className="space-y-4">
+        <div className="text-sm text-neutral-600">{message}</div>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" onClick={onClose} disabled={running}>
+            {cancelLabel}
+          </Button>
+          <Button variant={tone === 'danger' ? 'danger' : 'primary'} onClick={handleConfirm} disabled={running}>
+            {running ? 'Aguarde…' : confirmLabel}
+          </Button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 
@@ -137,10 +300,15 @@ export function StatTile({
   return (
     <Card>
       <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</p>
-      <p className={clsx('mt-2 text-2xl font-semibold', toneColor[tone])}>{value}</p>
+      <p className={clsx('mt-2 text-xl font-semibold break-words sm:text-2xl', toneColor[tone])}>{value}</p>
       {hint && <p className="mt-1 text-xs text-neutral-400">{hint}</p>}
     </Card>
   )
+}
+
+/** Envolve tabelas largas para rolarem na horizontal em vez de estourar a tela. */
+export function TableScroll({ children, className }: { children: ReactNode; className?: string }) {
+  return <div className={clsx('-mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0', className)}>{children}</div>
 }
 
 export function formatCurrency(value: number) {
@@ -157,13 +325,14 @@ export function Tabs({
   onChange: (id: string) => void
 }) {
   return (
-    <div className="mb-5 flex gap-1 border-b border-neutral-200">
+    <div className="mb-5 flex gap-1 overflow-x-auto border-b border-neutral-200">
       {tabs.map((tab) => (
         <button
           key={tab.id}
+          type="button"
           onClick={() => onChange(tab.id)}
           className={clsx(
-            '-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+            '-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
             active === tab.id
               ? 'border-[#d6247a] text-[#a81760]'
               : 'border-transparent text-neutral-500 hover:text-neutral-800',

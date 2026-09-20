@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { eachDayOfInterval, format, parseISO } from 'date-fns'
+import { useEffect, useId, useState } from 'react'
+import { eachDayOfInterval, format, isValid, parseISO } from 'date-fns'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { Button, Card, Input, Label, PageHeader, StatTile, formatCurrency } from '../components/ui'
@@ -33,9 +33,32 @@ interface ItemRow {
 
 const today = format(new Date(), 'yyyy-MM-dd')
 
+/** Um <input type="date"> pode voltar vazio ou incompleto enquanto é digitado. */
+function isValidDay(value: string) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && isValid(parseISO(value))
+}
+
+/** PostgREST recebe os ids na URL; em lotes para não estourar o tamanho dela. */
+async function fetchItemsInBatches(saleIds: string[]): Promise<ItemRow[]> {
+  const BATCH = 500
+  const all: ItemRow[] = []
+  for (let i = 0; i < saleIds.length; i += BATCH) {
+    const { data } = await supabase
+      .from('sale_items')
+      .select('sale_id, description, quantity, cost_price_at_sale, subtotal')
+      .in('sale_id', saleIds.slice(i, i + BATCH))
+    all.push(...((data as ItemRow[]) ?? []))
+  }
+  return all
+}
+
 export function Dashboard() {
+  const fieldId = useId()
   const [start, setStart] = useState(today)
   const [end, setEnd] = useState(today)
+  // período que realmente foi carregado; o cabeçalho lê daqui, nunca dos
+  // inputs, senão limpar o campo de data derruba a página
+  const [loadedRange, setLoadedRange] = useState({ start: today, end: today })
   const [salesCount, setSalesCount] = useState(0)
   const [faturamento, setFaturamento] = useState(0)
   const [lucro, setLucro] = useState(0)
@@ -45,6 +68,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   async function load() {
+    if (!isValidDay(start) || !isValidDay(end) || start > end) return
     setLoading(true)
 
     const [{ data: sales }, { data: products }] = await Promise.all([
@@ -59,16 +83,15 @@ export function Dashboard() {
 
     const saleRows = (sales as SaleRow[]) ?? []
     const saleIds = saleRows.map((s) => s.id)
-    const { data: items } =
-      saleIds.length > 0
-        ? await supabase.from('sale_items').select('sale_id, description, quantity, cost_price_at_sale, subtotal').in('sale_id', saleIds)
-        : { data: [] as ItemRow[] }
-    const itemRows = (items as ItemRow[]) ?? []
+    const itemRows = saleIds.length > 0 ? await fetchItemsInBatches(saleIds) : []
 
     const totalFaturamento = saleRows.reduce((s, r) => s + Number(r.total), 0)
     const totalDescontos = saleRows.reduce((s, r) => s + Number(r.discount), 0)
     // lucro bruto dos itens menos o desconto, que é dado sobre o total da venda
-    const lucroBruto = itemRows.reduce((s, i) => s + (Number(i.subtotal) - Number(i.cost_price_at_sale) * Number(i.quantity)), 0)
+    const lucroBruto = itemRows.reduce(
+      (s, i) => s + (Number(i.subtotal) - Number(i.cost_price_at_sale) * Number(i.quantity)),
+      0,
+    )
 
     setSalesCount(saleRows.length)
     setFaturamento(totalFaturamento)
@@ -84,15 +107,13 @@ export function Dashboard() {
     days.forEach((d) => byDay.set(format(d, 'yyyy-MM-dd'), { faturamento: 0, lucro: 0 }))
 
     saleRows.forEach((s) => {
-      const key = dayOfSale.get(s.id)!
-      const acc = byDay.get(key)
+      const acc = byDay.get(dayOfSale.get(s.id) ?? '')
       if (!acc) return
       acc.faturamento += Number(s.total)
       acc.lucro -= Number(s.discount)
     })
     itemRows.forEach((i) => {
-      const key = dayOfSale.get(i.sale_id)
-      const acc = key ? byDay.get(key) : undefined
+      const acc = byDay.get(dayOfSale.get(i.sale_id) ?? '')
       if (!acc) return
       acc.lucro += Number(i.subtotal) - Number(i.cost_price_at_sale) * Number(i.quantity)
     })
@@ -116,6 +137,7 @@ export function Dashboard() {
         .slice(0, 5),
     )
 
+    setLoadedRange({ start, end })
     setLoading(false)
   }
 
@@ -126,33 +148,40 @@ export function Dashboard() {
 
   const ticketMedio = salesCount > 0 ? faturamento / salesCount : 0
   const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0
+  const rangeIsValid = isValidDay(start) && isValidDay(end) && start <= end
 
   return (
     <div>
       <PageHeader title="Dashboard" subtitle="Visão geral da loja no período selecionado." />
 
       <Card className="mb-6">
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
           <div>
-            <Label>De</Label>
-            <Input type="date" value={start} onChange={(e) => setStart(e.target.value)} />
+            <Label htmlFor={`${fieldId}-start`}>De</Label>
+            <Input id={`${fieldId}-start`} type="date" value={start} onChange={(e) => setStart(e.target.value)} />
           </div>
           <div>
-            <Label>Até</Label>
-            <Input type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
+            <Label htmlFor={`${fieldId}-end`}>Até</Label>
+            <Input id={`${fieldId}-end`} type="date" value={end} onChange={(e) => setEnd(e.target.value)} />
           </div>
-          <Button onClick={load} disabled={loading || !start || !end || start > end}>
+          <Button onClick={load} disabled={loading || !rangeIsValid}>
             Filtrar
           </Button>
-          {start > end && <p className="text-sm text-[#d03b3b]">A data inicial não pode ser maior que a final.</p>}
         </div>
+        {!rangeIsValid && (
+          <p className="mt-3 text-sm text-[#d03b3b]">
+            {isValidDay(start) && isValidDay(end)
+              ? 'A data inicial não pode ser maior que a final.'
+              : 'Informe as duas datas para filtrar.'}
+          </p>
+        )}
       </Card>
 
       {loading ? (
         <p className="text-sm text-neutral-500">Carregando…</p>
       ) : (
         <>
-          <div className="mb-6 grid grid-cols-5 gap-4">
+          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
             <StatTile label="Vendas no período" value={String(salesCount)} />
             <StatTile label="Faturamento" value={formatCurrency(faturamento)} />
             <StatTile label="Ticket médio" value={formatCurrency(ticketMedio)} />
@@ -170,11 +199,11 @@ export function Dashboard() {
             />
           </div>
 
-          <div className="mb-6 grid grid-cols-3 gap-6">
-            <Card className="col-span-2">
+          <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
+            <Card className="lg:col-span-2">
               <h3 className="mb-1 text-sm font-semibold text-neutral-900">Faturamento e lucro por dia</h3>
               <p className="mb-4 text-xs text-neutral-500">
-                {format(parseISO(start), 'dd/MM/yyyy')} a {format(parseISO(end), 'dd/MM/yyyy')}
+                {format(parseISO(loadedRange.start), 'dd/MM/yyyy')} a {format(parseISO(loadedRange.end), 'dd/MM/yyyy')}
               </p>
               <div style={{ width: '100%', height: 260 }}>
                 <ResponsiveContainer>
@@ -185,7 +214,7 @@ export function Dashboard() {
                       tick={{ fontSize: 12, fill: '#898781' }}
                       axisLine={{ stroke: '#c3c2b7' }}
                       tickLine={false}
-                      interval={series.length > 60 ? 'preserveStartEnd' : 0}
+                      interval={series.length > 31 ? 'preserveStartEnd' : 0}
                     />
                     <YAxis
                       tick={{ fontSize: 12, fill: '#898781' }}
@@ -217,12 +246,12 @@ export function Dashboard() {
               ) : (
                 <ul className="space-y-3">
                   {topProducts.map((p, i) => (
-                    <li key={p.name} className="flex items-center justify-between text-sm">
-                      <span className="text-neutral-700">
+                    <li key={p.name} className="flex items-center justify-between gap-3 text-sm">
+                      <span className="min-w-0 text-neutral-700">
                         <span className="mr-2 text-neutral-400">{i + 1}.</span>
                         {p.name}
                       </span>
-                      <span className="font-medium text-neutral-900">{p.quantity}</span>
+                      <span className="shrink-0 font-medium text-neutral-900">{p.quantity}</span>
                     </li>
                   ))}
                 </ul>
