@@ -47,7 +47,7 @@ export function Login() {
           </Button>
         </form>
           <p className="mt-6 text-xs text-neutral-400">
-            Usuários são criados no painel do Supabase (Authentication → Users). Veja o README do projeto.
+            O Senhor é meu pastor e nada me faltará.
           </p>
         </div>
       </div>
