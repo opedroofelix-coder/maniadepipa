@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { eachDayOfInterval, format, isValid, parseISO } from 'date-fns'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
+import { localDayRangeToUtcIso } from '../lib/date'
 import { Button, Card, Input, Label, Loader, PageHeader, StatTile, formatCurrency } from '../components/ui'
 
 interface DayPoint {
@@ -31,8 +32,6 @@ interface ItemRow {
   subtotal: number
 }
 
-const today = format(new Date(), 'yyyy-MM-dd')
-
 /** Um <input type="date"> pode voltar vazio ou incompleto enquanto é digitado. */
 function isValidDay(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && isValid(parseISO(value))
@@ -54,6 +53,7 @@ async function fetchItemsInBatches(saleIds: string[]): Promise<ItemRow[]> {
 
 export function Dashboard() {
   const fieldId = useId()
+  const today = format(new Date(), 'yyyy-MM-dd')
   const [start, setStart] = useState(today)
   const [end, setEnd] = useState(today)
   // período que realmente foi carregado; o cabeçalho lê daqui, nunca dos
@@ -71,13 +71,14 @@ export function Dashboard() {
     if (!isValidDay(start) || !isValidDay(end) || start > end) return
     setLoading(true)
 
+    const { startIso, endIso } = localDayRangeToUtcIso(start, end)
     const [{ data: sales }, { data: products }] = await Promise.all([
       supabase
         .from('sales')
         .select('id, total, discount, created_at')
         .eq('status', 'completed')
-        .gte('created_at', `${start}T00:00:00`)
-        .lte('created_at', `${end}T23:59:59`),
+        .gte('created_at', startIso)
+        .lte('created_at', endIso),
       supabase.from('products').select('stock_quantity, min_stock').eq('active', true),
     ])
 

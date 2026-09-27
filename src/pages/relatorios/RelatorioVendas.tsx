@@ -3,6 +3,7 @@ import { format, startOfMonth } from 'date-fns'
 import { Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { downloadCsv } from '../../lib/csv'
+import { localDayRangeToUtcIso } from '../../lib/date'
 import type { PaymentMethod, Sale } from '../../types/database'
 import { Button, Card, EmptyState, Input, Label, Loader, StatTile, formatCurrency } from '../../components/ui'
 
@@ -17,12 +18,13 @@ export function RelatorioVendas() {
 
   async function load() {
     setLoading(true)
+    const { startIso, endIso } = localDayRangeToUtcIso(start, end)
     const { data } = await supabase
       .from('sales')
       .select('*, customers(name)')
       .eq('status', 'completed')
-      .gte('created_at', `${start}T00:00:00`)
-      .lte('created_at', `${end}T23:59:59`)
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
       .order('created_at', { ascending: false })
     setSales((data as unknown as SaleWithCustomer[]) ?? [])
     setLoading(false)

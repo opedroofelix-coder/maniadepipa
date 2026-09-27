@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { format, startOfMonth } from 'date-fns'
 import { supabase } from '../../lib/supabase'
+import { localDayRangeToUtcIso } from '../../lib/date'
 import type { Sale } from '../../types/database'
 import {
   Badge,
@@ -31,11 +32,12 @@ export function HistoricoTab() {
   const [toCancel, setToCancel] = useState<SaleWithRelations | null>(null)
 
   async function fetchPage(offset: number) {
+    const { startIso, endIso } = localDayRangeToUtcIso(start, end)
     return supabase
       .from('sales')
       .select('*, profiles(full_name), customers(name)')
-      .gte('created_at', `${start}T00:00:00`)
-      .lte('created_at', `${end}T23:59:59`)
+      .gte('created_at', startIso)
+      .lte('created_at', endIso)
       .order('created_at', { ascending: false })
       .range(offset, offset + PAGE_SIZE - 1)
   }
