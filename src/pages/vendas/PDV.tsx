@@ -2,7 +2,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatQuantity, isPositiveDecimal, parseDecimal, toDecimal } from '../../lib/number'
+import { formatQuantity, isPositiveDecimal, parseDecimal, roundMoney, roundQuantity, toDecimal } from '../../lib/number'
 import type { CashSession, Customer, PaymentMethod, Product, SimplePaymentMethod } from '../../types/database'
 import {
   Badge,
@@ -46,7 +46,12 @@ const PAYMENT_LABEL: Record<PaymentMethod, string> = {
 const emptyAvulso = { description: 'Diversos', unitPrice: '', quantity: '1' }
 
 function lineTotal(line: CartLine) {
-  return toDecimal(line.quantity) * toDecimal(line.unitPrice)
+  return roundMoney(toDecimal(line.quantity) * toDecimal(line.unitPrice))
+}
+
+/** true quando o campo está vazio ou o texto não é um número válido. */
+function isBlankOrInvalid(value: string) {
+  return !value.trim() || Number.isNaN(parseDecimal(value))
 }
 
 export function PDV() {
@@ -203,13 +208,17 @@ export function PDV() {
     searchInputRef.current?.focus()
   }
 
-  const subtotal = useMemo(() => cart.reduce((sum, l) => sum + lineTotal(l), 0), [cart])
+  const subtotal = useMemo(() => roundMoney(cart.reduce((sum, l) => sum + lineTotal(l), 0)), [cart])
   // desconto nunca passa do subtotal, senão sales.subtotal - discount não bate
   // com sales.total e o lucro do Dashboard fica negativo à toa
-  const appliedDiscount = Math.min(Math.max(toDecimal(discount), 0), subtotal)
-  const total = subtotal - appliedDiscount
-  const received = toDecimal(amountReceived)
-  const change = paymentMethod === 'dinheiro' ? Math.max(received - total, 0) : 0
+  const appliedDiscount = roundMoney(Math.min(Math.max(toDecimal(discount), 0), subtotal))
+  // tudo arredondado para centavos antes de comparar: sem isso 3 x R$ 1,10 dá
+  // 3.3000000000000003 e o 3,30 digitado pelo caixa é recusado por engano
+  const total = roundMoney(subtotal - appliedDiscount)
+  const received = roundMoney(toDecimal(amountReceived))
+  const change = paymentMethod === 'dinheiro' ? roundMoney(Math.max(received - total, 0)) : 0
+  // só acusa o campo depois que o caixa digitou algo: vazio não é erro de digitação
+  const receivedIsGibberish = amountReceived.trim() !== '' && Number.isNaN(parseDecimal(amountReceived))
 
   function resetSale() {
     setCart([])
@@ -233,7 +242,7 @@ export function PDV() {
     setPaymentLines((prev) => prev.filter((_, i) => i !== index))
   }
 
-  const mistoSum = paymentLines.reduce((sum, l) => sum + toDecimal(l.amount), 0)
+  const mistoSum = roundMoney(paymentLines.reduce((sum, l) => sum + toDecimal(l.amount), 0))
 
   async function handleFinalize() {
     setError(null)
@@ -252,9 +261,24 @@ export function PDV() {
       setError(`Confira a quantidade e o preço de "${invalidLine.description.trim() || 'item sem descrição'}".`)
       return
     }
+    if (discount.trim() && Number.isNaN(parseDecimal(discount))) {
+      setError('O desconto precisa ser um valor válido (ex.: 2,50).')
+      return
+    }
+    if (paymentMethod === 'dinheiro' && isBlankOrInvalid(amountReceived)) {
+      setError('Informe o valor recebido (ex.: 12,50).')
+      return
+    }
     if (paymentMethod === 'dinheiro' && received < total) {
       setError('Valor recebido é menor que o total.')
       return
+    }
+    if (paymentMethod === 'misto') {
+      const invalidPayment = paymentLines.findIndex((l) => isBlankOrInvalid(l.amount))
+      if (invalidPayment !== -1) {
+        setError(`Confira o valor da forma de pagamento ${invalidPayment + 1}.`)
+        return
+      }
     }
     if (paymentMethod === 'misto' && Math.abs(mistoSum - total) > 0.01) {
       setError(
@@ -274,6 +298,7 @@ export function PDV() {
         .select('id, name, stock_quantity, unit')
         .in('id', productLines.map((l) => l.productId as string))
       if (stockError) {
+        console.error('products select', stockError)
         setError('Não foi possível conferir o estoque. Tente de novo.')
         setSaving(false)
         return
@@ -315,6 +340,7 @@ export function PDV() {
       .single()
 
     if (saleError || !sale) {
+      console.error('sales insert', saleError)
       setError('Não foi possível registrar a venda.')
       setSaving(false)
       return
@@ -324,14 +350,15 @@ export function PDV() {
       sale_id: sale.id,
       product_id: l.productId,
       description: l.description.trim(),
-      quantity: toDecimal(l.quantity),
-      unit_price: toDecimal(l.unitPrice),
-      cost_price_at_sale: l.costPrice,
+      quantity: roundQuantity(toDecimal(l.quantity)),
+      unit_price: roundMoney(toDecimal(l.unitPrice)),
+      cost_price_at_sale: roundMoney(l.costPrice),
       subtotal: lineTotal(l),
     }))
     const { error: itemsError } = await supabase.from('sale_items').insert(itemsPayload)
 
     if (itemsError) {
+      console.error('sale_items insert', itemsError)
       // desfaz a venda para não sobrar registro órfão contando no faturamento
       // (sale_items e sale_payments saem junto por on delete cascade)
       await supabase.from('sales').delete().eq('id', sale.id)
@@ -340,17 +367,22 @@ export function PDV() {
       return
     }
 
-    const paymentsPayload =
+    // sale_payments tem check (amount > 0): linha de valor zero (venda 100% de
+    // desconto, por exemplo) é descartada em vez de derrubar o insert inteiro
+    const paymentsPayload = (
       paymentMethod === 'misto'
-        ? paymentLines
-            .filter((l) => toDecimal(l.amount) > 0)
-            .map((l) => ({ sale_id: sale.id, method: l.method, amount: toDecimal(l.amount) }))
+        ? paymentLines.map((l) => ({ sale_id: sale.id, method: l.method, amount: roundMoney(toDecimal(l.amount)) }))
         : [{ sale_id: sale.id, method: paymentMethod as SimplePaymentMethod, amount: total }]
-    const { error: paymentsError } = await supabase.from('sale_payments').insert(paymentsPayload)
+    ).filter((l) => l.amount > 0)
+    const { error: paymentsError } =
+      paymentsPayload.length > 0
+        ? await supabase.from('sale_payments').insert(paymentsPayload)
+        : { error: null }
 
     setSaving(false)
 
     if (paymentsError) {
+      console.error('sale_payments insert', paymentsError)
       setError('A venda foi registrada, mas o detalhe do pagamento não foi salvo. Confira o histórico.')
       return
     }
@@ -609,7 +641,14 @@ export function PDV() {
                     id={`${fieldId}-received`}
                     value={amountReceived}
                     onChange={(e) => setAmountReceived(e.target.value)}
+                    aria-invalid={receivedIsGibberish}
+                    className={
+                      receivedIsGibberish ? 'border-[#d03b3b] focus:border-[#d03b3b] focus:ring-[#d03b3b]/20' : undefined
+                    }
                   />
+                  {receivedIsGibberish && (
+                    <p className="mt-1 text-xs text-[#d03b3b]">Use só números, com vírgula nos centavos (ex.: 12,50).</p>
+                  )}
                   {received > 0 && (
                     <p className="mt-1 text-sm text-neutral-600">
                       Troco: <span className="font-medium text-neutral-900">{formatCurrency(change)}</span>

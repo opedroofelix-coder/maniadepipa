@@ -2,7 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Lock, Unlock, Wallet } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { toDecimal } from '../../lib/number'
+import { parseDecimal, roundMoney, toDecimal } from '../../lib/number'
 import type { CashSession, CashMovementType } from '../../types/database'
 import { Button, Card, DecimalInput, Label, Modal, Select, formatCurrency } from '../../components/ui'
 
@@ -45,7 +45,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
         (sum, m) => sum + (m.type === 'suprimento' ? Number(m.amount) : -Number(m.amount)),
         0,
       )
-      if (!cancelled) setExpected(Number(current.opening_amount) + cash + movementsTotal)
+      if (!cancelled) setExpected(roundMoney(Number(current.opening_amount) + cash + movementsTotal))
     }
     setExpected(null)
     loadExpected(session)
@@ -75,6 +75,11 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
   }
 
   async function handleOpen() {
+    const amount = parseDecimal(openingAmount)
+    if (Number.isNaN(amount) || amount < 0) {
+      setOpenError('Informe um valor válido, de zero para cima (ex.: 50,00).')
+      return
+    }
     setSaving(true)
     setOpenError(null)
     // reconferir logo antes de gravar: evita duas sessões por duplo clique ou
@@ -88,11 +93,12 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     }
     const { error } = await supabase.from('cash_sessions').insert({
       cashier_id: profile?.id ?? null,
-      opening_amount: toDecimal(openingAmount),
+      opening_amount: roundMoney(amount),
       status: 'open',
     })
     setSaving(false)
     if (error) {
+      console.error('cash_sessions insert', error)
       setOpenError('Não foi possível abrir o caixa.')
       return
     }
@@ -102,19 +108,27 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
 
   async function handleClose() {
     if (!session) return
+    const amount = parseDecimal(closingAmount)
+    if (Number.isNaN(amount) || amount < 0) {
+      setCloseError('Informe um valor válido, de zero para cima (ex.: 150,00).')
+      return
+    }
     setSaving(true)
     setCloseError(null)
     const { error } = await supabase
       .from('cash_sessions')
       .update({
-        closing_amount: toDecimal(closingAmount),
-        expected_amount: expected ?? null,
+        closing_amount: roundMoney(amount),
+        // expected_amount tem check (>= 0): com sangria maior que a entrada o
+        // esperado fica negativo e o fechamento era recusado pelo banco
+        expected_amount: expected === null ? null : Math.max(roundMoney(expected), 0),
         closed_at: new Date().toISOString(),
         status: 'closed',
       })
       .eq('id', session.id)
     setSaving(false)
     if (error) {
+      console.error('cash_sessions update', error)
       setCloseError('Não foi possível fechar o caixa.')
       return
     }
@@ -124,8 +138,12 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
 
   async function handleMovement() {
     if (!session) return
-    const amount = toDecimal(moveAmount)
-    if (!amount || amount <= 0) {
+    const amount = parseDecimal(moveAmount)
+    if (Number.isNaN(amount)) {
+      setMoveError('Use só números, com vírgula nos centavos (ex.: 12,50).')
+      return
+    }
+    if (roundMoney(amount) <= 0) {
       setMoveError('Informe um valor maior que zero.')
       return
     }
@@ -134,11 +152,12 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     const { error } = await supabase.from('cash_movements').insert({
       session_id: session.id,
       type: moveType,
-      amount,
+      amount: roundMoney(amount),
       reason: moveReason.trim() || null,
     })
     setSaving(false)
     if (error) {
+      console.error('cash_movements insert', error)
       setMoveError('Não foi possível registrar a movimentação.')
       return
     }
@@ -182,8 +201,8 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     )
   }
 
-  const counted = toDecimal(closingAmount)
-  const difference = expected === null ? null : counted - expected
+  const counted = roundMoney(toDecimal(closingAmount))
+  const difference = expected === null ? null : roundMoney(counted - expected)
 
   return (
     <Card className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -238,7 +257,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
             </div>
           )}
           {closeError && <p className="text-sm text-[#d03b3b]">{closeError}</p>}
-          <Button className="w-full" variant="danger" onClick={handleClose} disabled={saving}>
+          <Button className="w-full" variant="danger" onClick={handleClose} disabled={saving || expected === null}>
             {saving ? 'Fechando…' : 'Confirmar fechamento'}
           </Button>
         </div>

@@ -35,3 +35,23 @@ export function isPositiveDecimal(value: string): boolean {
 export function formatQuantity(value: number): string {
   return value.toLocaleString('pt-BR', { maximumFractionDigits: 3 })
 }
+
+/**
+ * Arredonda para centavos, matando o ruído de ponto flutuante do JavaScript.
+ * Sem isso, 3 x R$ 1,10 vira 3.3000000000000003 e a conferência do valor
+ * recebido recusa o 3,30 que o operador digitou. As colunas de dinheiro são
+ * numeric(12,2), então o que a tela mostra, o que é comparado e o que é
+ * gravado passam a ser o mesmo número.
+ *
+ * 3.3000000000000003 -> 3.3 | 0.7000000000000001 -> 0.7
+ */
+export function roundMoney(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round((value + Number.EPSILON) * 100) / 100
+}
+
+/** Como roundMoney, mas com 3 casas: as quantidades são numeric(12,3). */
+export function roundQuantity(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.round((value + Number.EPSILON) * 1000) / 1000
+}
