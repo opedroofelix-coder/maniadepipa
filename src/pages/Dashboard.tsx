@@ -3,6 +3,7 @@ import { eachDayOfInterval, format, isValid, parseISO } from 'date-fns'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { localDayRangeToUtcIso } from '../lib/date'
+import { fetchItemsInBatches } from '../lib/sales'
 import { Button, Card, Input, Label, Loader, PageHeader, StatTile, formatCurrency } from '../components/ui'
 
 interface DayPoint {
@@ -24,31 +25,9 @@ interface SaleRow {
   created_at: string
 }
 
-interface ItemRow {
-  sale_id: string
-  description: string
-  quantity: number
-  cost_price_at_sale: number
-  subtotal: number
-}
-
 /** Um <input type="date"> pode voltar vazio ou incompleto enquanto é digitado. */
 function isValidDay(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) && isValid(parseISO(value))
-}
-
-/** PostgREST recebe os ids na URL; em lotes para não estourar o tamanho dela. */
-async function fetchItemsInBatches(saleIds: string[]): Promise<ItemRow[]> {
-  const BATCH = 500
-  const all: ItemRow[] = []
-  for (let i = 0; i < saleIds.length; i += BATCH) {
-    const { data } = await supabase
-      .from('sale_items')
-      .select('sale_id, description, quantity, cost_price_at_sale, subtotal')
-      .in('sale_id', saleIds.slice(i, i + BATCH))
-    all.push(...((data as ItemRow[]) ?? []))
-  }
-  return all
 }
 
 export function Dashboard() {

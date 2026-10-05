@@ -119,9 +119,9 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
       .from('cash_sessions')
       .update({
         closing_amount: roundMoney(amount),
-        // expected_amount tem check (>= 0): com sangria maior que a entrada o
-        // esperado fica negativo e o fechamento era recusado pelo banco
-        expected_amount: expected === null ? null : Math.max(roundMoney(expected), 0),
+        // pode ser negativo quando as sangrias passam do que entrou: ver
+        // supabase/migrations/0003_fechamento_negativo.sql
+        expected_amount: expected === null ? null : roundMoney(expected),
         closed_at: new Date().toISOString(),
         status: 'closed',
       })
@@ -234,6 +234,11 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
             <p className="mt-1 text-xs text-neutral-400">
               Abertura + vendas em dinheiro + suprimentos − sangrias.
             </p>
+            {expected !== null && expected < 0 && (
+              <p className="mt-1 text-xs text-[#8a5b00]">
+                Negativo: as retiradas passaram do que entrou na gaveta.
+              </p>
+            )}
           </div>
           <div>
             <Label htmlFor={`${fieldId}-closing`}>Valor contado na gaveta</Label>

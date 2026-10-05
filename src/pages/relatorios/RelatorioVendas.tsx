@@ -4,8 +4,20 @@ import { Download } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { downloadCsv } from '../../lib/csv'
 import { localDayRangeToUtcIso } from '../../lib/date'
+import { formatQuantity } from '../../lib/number'
+import { aggregateByProduct, fetchItemsInBatches, type ProductSold } from '../../lib/sales'
 import type { PaymentMethod, Sale } from '../../types/database'
-import { Button, Card, EmptyState, Input, Label, Loader, StatTile, formatCurrency } from '../../components/ui'
+import {
+  Button,
+  Card,
+  EmptyState,
+  Input,
+  Label,
+  Loader,
+  StatTile,
+  TableScroll,
+  formatCurrency,
+} from '../../components/ui'
 
 type SaleWithCustomer = Sale & { customers: { name: string } | null }
 
@@ -14,6 +26,7 @@ export function RelatorioVendas() {
   const [start, setStart] = useState(format(startOfMonth(new Date()), 'yyyy-MM-dd'))
   const [end, setEnd] = useState(format(new Date(), 'yyyy-MM-dd'))
   const [sales, setSales] = useState<SaleWithCustomer[]>([])
+  const [products, setProducts] = useState<ProductSold[]>([])
   const [loading, setLoading] = useState(true)
 
   async function load() {
@@ -26,7 +39,12 @@ export function RelatorioVendas() {
       .gte('created_at', startIso)
       .lte('created_at', endIso)
       .order('created_at', { ascending: false })
-    setSales((data as unknown as SaleWithCustomer[]) ?? [])
+    const rows = (data as unknown as SaleWithCustomer[]) ?? []
+    setSales(rows)
+    // só as vendas concluídas chegam aqui, então produto de venda cancelada
+    // não entra na conta
+    const items = rows.length > 0 ? await fetchItemsInBatches(rows.map((s) => s.id)) : []
+    setProducts(aggregateByProduct(items))
     setLoading(false)
   }
 
@@ -107,6 +125,34 @@ export function RelatorioVendas() {
                   </li>
                 ))}
               </ul>
+            )}
+          </Card>
+
+          <Card className="mb-6">
+            <h3 className="mb-4 text-sm font-semibold text-neutral-900">Produtos vendidos no período</h3>
+            {products.length === 0 ? (
+              <EmptyState message="Sem vendas no período selecionado." />
+            ) : (
+              <TableScroll>
+                <table className="w-full min-w-[420px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
+                      <th className="py-2 pr-3">Produto</th>
+                      <th className="py-2 pr-3 text-center">Qtd.</th>
+                      <th className="py-2 text-right">Faturamento</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-neutral-100">
+                    {products.map((p) => (
+                      <tr key={p.description}>
+                        <td className="py-2.5 pr-3 text-neutral-900">{p.description}</td>
+                        <td className="py-2.5 pr-3 text-center text-neutral-700">{formatQuantity(p.quantity)}</td>
+                        <td className="py-2.5 text-right font-medium text-neutral-900">{formatCurrency(p.revenue)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </TableScroll>
             )}
           </Card>
         </>
