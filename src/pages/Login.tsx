@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { Button, Input, Label, Loader } from '../components/ui'
+import { InstallAppButton } from '../components/InstallApp'
 import logo from '../assets/logo.png'
 
 export function Login() {
@@ -65,6 +66,7 @@ export function Login() {
             {submitting ? 'Entrando…' : 'Entrar'}
           </Button>
         </form>
+          <InstallAppButton className="mt-3 justify-center" />
           <p className="mt-6 text-xs text-neutral-400">
             O Senhor é meu pastor e nada me faltará.
           </p>
