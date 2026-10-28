@@ -5,6 +5,7 @@ import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
 import type { Role } from '../types/database'
 import { Button, Loader } from './ui'
+import { InstallAppButton } from './InstallApp'
 import logo from '../assets/logo.png'
 
 interface NavItem {
@@ -125,6 +126,7 @@ export function Layout() {
             <p className="truncate text-sm font-medium text-neutral-900">{profile.full_name}</p>
             <p className="text-xs capitalize text-neutral-500">{profile.role}</p>
           </div>
+          <InstallAppButton />
           <button
             type="button"
             onClick={() => signOut()}

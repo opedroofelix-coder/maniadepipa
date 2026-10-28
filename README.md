@@ -102,6 +102,27 @@ o deploy. Detalhes:
 No Supabase, adicione a URL do site em **Authentication → URL Configuration**
 (Site URL e Redirect URLs).
 
+## App no celular/computador (PWA)
+
+O sistema é um PWA: dá para instalar e usar como aplicativo (ícone na tela
+de início, abre em tela cheia, sem a barra do navegador).
+
+- **Android / Chrome / Edge**: botão **Instalar app** na tela de login e no
+  menu lateral (ou no menu do navegador → *Instalar app*).
+- **iPhone / iPad**: no Safari, **Compartilhar → Adicionar à Tela de Início**
+  (o botão **Instalar app** mostra esse passo a passo).
+
+Arquivos envolvidos:
+
+- `public/manifest.webmanifest` e `public/icons/`: nome, cores e ícones do app.
+- `pwa/sw.js`: service worker. No build, o plugin `serviceWorker` do
+  `vite.config.ts` gera `dist/sw.js` com a lista de arquivos do build para
+  deixar a interface guardada. A navegação busca sempre a versão nova na rede
+  (o app atualiza sozinho a cada deploy) e só usa o cache sem internet. Os dados
+  do Supabase nunca passam pelo cache.
+- `src/lib/pwa.ts` e `src/components/InstallApp.tsx`: registro do service
+  worker e botão de instalação.
+
 ## Como o fluxo de venda funciona
 
 - **Abrir caixa**: antes de vender, é preciso abrir uma sessão de caixa
