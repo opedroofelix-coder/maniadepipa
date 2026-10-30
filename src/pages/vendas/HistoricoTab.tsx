@@ -122,7 +122,7 @@ export function HistoricoTab() {
         </Button>
       </div>
 
-      {error && <p className="mb-3 text-sm text-[#d03b3b]">{error}</p>}
+      {error && <p className="mb-3 text-sm font-bold text-[#a12424]">{error}</p>}
 
       {loading ? (
         <Loader />
@@ -159,21 +159,13 @@ export function HistoricoTab() {
                       </Badge>
                     </td>
                     <td className="py-2.5 text-right whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => openDetail(s)}
-                        className="px-2 py-2 text-xs font-medium text-[#a81760] hover:underline"
-                      >
+                      <Button variant="ghost" size="sm" onClick={() => openDetail(s)}>
                         Ver itens
-                      </button>
+                      </Button>
                       {s.status === 'completed' && (
-                        <button
-                          type="button"
-                          onClick={() => setToCancel(s)}
-                          className="px-2 py-2 text-xs font-medium text-[#d03b3b] hover:underline"
-                        >
+                        <Button variant="danger-ghost" size="sm" onClick={() => setToCancel(s)}>
                           Cancelar
-                        </button>
+                        </Button>
                       )}
                     </td>
                   </tr>
@@ -225,7 +217,7 @@ export function HistoricoTab() {
             </div>
 
             {detailError ? (
-              <p className="text-sm text-[#d03b3b]">{detailError}</p>
+              <p className="text-sm font-bold text-[#a12424]">{detailError}</p>
             ) : detailItems === null ? (
               <Loader label="Carregando itens…" />
             ) : detailItems.length === 0 ? (

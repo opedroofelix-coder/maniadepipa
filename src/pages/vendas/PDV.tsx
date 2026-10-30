@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Card,
+  ChoiceButton,
   DecimalInput,
   IconButton,
   Input,
@@ -406,7 +407,7 @@ export function PDV() {
           <Card>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
               <div className="relative flex-1">
-                <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-400" />
+                <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#52607a]" />
                 <Input
                   ref={searchInputRef}
                   placeholder="Buscar produto por nome ou código…"
@@ -419,7 +420,7 @@ export function PDV() {
                   autoFocus
                 />
                 {results.length > 0 && (
-                  <div className="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-neutral-200 bg-white shadow-lg">
+                  <div className="absolute z-10 mt-2 w-full overflow-hidden rounded-2xl border-2 border-[#d5e3f0] bg-white shadow-[0_12px_30px_rgba(14,34,64,0.15)]">
                     {results.map((p) => {
                       const low = Number(p.stock_quantity) <= Number(p.min_stock)
                       return (
@@ -427,30 +428,30 @@ export function PDV() {
                           key={p.id}
                           type="button"
                           onClick={() => addToCart(p)}
-                          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left text-sm hover:bg-neutral-50"
+                          className="flex min-h-12 w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm hover:bg-[#eaf6ff] focus-visible:bg-[#eaf6ff] focus-visible:outline-none"
                         >
                           <span className="min-w-0">
-                            <span className="block truncate font-medium text-neutral-900">{p.name}</span>
-                            <span className={low ? 'text-xs font-medium text-[#d03b3b]' : 'text-xs text-neutral-400'}>
+                            <span className="block truncate font-extrabold text-[#0e2240]">{p.name}</span>
+                            <span className={low ? 'text-xs font-bold text-[#a12424]' : 'text-xs font-semibold text-[#52607a]'}>
                               {formatQuantity(Number(p.stock_quantity))} {p.unit} em estoque
                               {p.code && ` · ${p.code}`}
                             </span>
                           </span>
-                          <span className="shrink-0 text-neutral-600">{formatCurrency(p.sale_price)}</span>
+                          <span className="shrink-0 font-extrabold text-[#0e2240]">{formatCurrency(p.sale_price)}</span>
                         </button>
                       )
                     })}
                   </div>
                 )}
               </div>
-              <Button variant="secondary" onClick={openAvulso} disabled={!session} className="shrink-0 py-2.5">
+              <Button variant="secondary" onClick={openAvulso} disabled={!session} className="shrink-0">
                 <Plus size={16} /> Diversos
               </Button>
             </div>
 
             <div className="mt-5">
               {cartIsEmpty ? (
-                <p className="py-10 text-center text-sm text-neutral-400">
+                <p className="py-10 text-center text-sm font-semibold text-[#52607a]">
                   Carrinho vazio. Busque um produto para começar.
                 </p>
               ) : (
@@ -458,7 +459,7 @@ export function PDV() {
                   {/* celular: cards empilhados (a tabela não cabe em 375px) */}
                   <ul className="space-y-3 lg:hidden">
                     {cart.map((l) => (
-                      <li key={l.id} className="rounded-lg border border-neutral-200 p-3">
+                      <li key={l.id} className="rounded-2xl border-2 border-[#d5e3f0] p-3">
                         <div className="flex items-start justify-between gap-2">
                           <p className="min-w-0 flex-1 text-sm font-medium text-neutral-900">
                             {l.description}
@@ -577,7 +578,7 @@ export function PDV() {
 
         <div>
           <Card>
-            <h3 className="mb-4 text-sm font-semibold text-neutral-900">Fechamento</h3>
+            <h2 className="mb-4 font-display text-[22px] font-extrabold text-[#0e2240]">Fechamento</h2>
 
             <div className="space-y-3">
               <div>
@@ -615,21 +616,19 @@ export function PDV() {
               </div>
 
               <div>
-                <Label>Forma de pagamento</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <p id={`${fieldId}-payment`} className="mb-1.5 text-[13px] font-extrabold text-[#0e2240]">
+                  Forma de pagamento
+                </p>
+                <div role="group" aria-labelledby={`${fieldId}-payment`} className="grid grid-cols-2 gap-2">
                   {(Object.keys(PAYMENT_LABEL) as PaymentMethod[]).map((method) => (
-                    <button
+                    <ChoiceButton
                       key={method}
-                      type="button"
+                      selected={paymentMethod === method}
                       onClick={() => setPaymentMethod(method)}
-                      className={
-                        paymentMethod === method
-                          ? 'rounded-lg bg-[#d6247a] px-3 py-2.5 text-sm font-medium text-white'
-                          : 'rounded-lg bg-neutral-100 px-3 py-2.5 text-sm font-medium text-neutral-700 hover:bg-neutral-200'
-                      }
+                      className={method === 'misto' ? 'col-span-2' : undefined}
                     >
                       {PAYMENT_LABEL[method]}
-                    </button>
+                    </ChoiceButton>
                   ))}
                 </div>
               </div>
@@ -643,11 +642,11 @@ export function PDV() {
                     onChange={(e) => setAmountReceived(e.target.value)}
                     aria-invalid={receivedIsGibberish}
                     className={
-                      receivedIsGibberish ? 'border-[#d03b3b] focus:border-[#d03b3b] focus:ring-[#d03b3b]/20' : undefined
+                      receivedIsGibberish ? 'border-[#a12424] focus:border-[#a12424] focus:ring-[#a12424]/20' : undefined
                     }
                   />
                   {receivedIsGibberish && (
-                    <p className="mt-1 text-xs text-[#d03b3b]">Use só números, com vírgula nos centavos (ex.: 12,50).</p>
+                    <p className="mt-1 text-xs font-bold text-[#a12424]">Use só números, com vírgula nos centavos (ex.: 12,50).</p>
                   )}
                   {received > 0 && (
                     <p className="mt-1 text-sm text-neutral-600">
@@ -666,6 +665,7 @@ export function PDV() {
                         value={line.method}
                         onChange={(e) => updatePaymentLine(i, { method: e.target.value as SimplePaymentMethod })}
                         aria-label={`Forma de pagamento ${i + 1}`}
+                        className="min-w-0 flex-[3] pr-2"
                       >
                         <option value="dinheiro">Dinheiro</option>
                         <option value="pix">Pix</option>
@@ -676,6 +676,8 @@ export function PDV() {
                         value={line.amount}
                         onChange={(e) => updatePaymentLine(i, { amount: e.target.value })}
                         aria-label={`Valor do pagamento ${i + 1}`}
+                        placeholder="0,00"
+                        className="min-w-0 flex-[2] text-right"
                       />
                       {paymentLines.length > 1 && (
                         <IconButton tone="danger" onClick={() => removePaymentLine(i)} aria-label="Remover pagamento">
@@ -684,27 +686,23 @@ export function PDV() {
                       )}
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={addPaymentLine}
-                    className="text-xs font-medium text-[#d6247a] hover:underline"
-                  >
-                    + adicionar forma de pagamento
-                  </button>
+                  <Button variant="ghost" size="sm" onClick={addPaymentLine} className="-ml-2 whitespace-nowrap">
+                    <Plus size={16} /> Adicionar pagamento
+                  </Button>
                   <p className="text-xs text-neutral-500">
                     Soma: {formatCurrency(mistoSum)} de {formatCurrency(total)}
                   </p>
                 </div>
               )}
 
-              {error && <p className="text-sm text-[#d03b3b]">{error}</p>}
+              {error && <p className="text-sm font-bold text-[#a12424]">{error}</p>}
 
               <Button className="w-full" size="lg" disabled={!session || saving || cartIsEmpty} onClick={handleFinalize}>
                 {saving ? 'Finalizando…' : 'Finalizar venda'}
               </Button>
 
               {lastReceipt && (
-                <p className="rounded-lg bg-[#0ca30c]/10 px-3 py-2 text-center text-sm text-[#0ca30c]">
+                <p role="status" className="rounded-2xl bg-[#ddf7e8] px-4 py-3 text-center text-sm font-bold text-[#0a6b34]">
                   Venda registrada: {formatCurrency(lastReceipt.total)}
                   {lastReceipt.change > 0 && ` · troco ${formatCurrency(lastReceipt.change)}`}
                 </p>
@@ -745,8 +743,8 @@ export function PDV() {
               />
             </div>
           </div>
-          {avulsoError && <p className="text-sm text-[#d03b3b]">{avulsoError}</p>}
-          <p className="text-xs text-neutral-400">
+          {avulsoError && <p className="text-sm font-bold text-[#a12424]">{avulsoError}</p>}
+          <p className="text-xs font-semibold text-[#52607a]">
             Item avulso não é cadastrado e não movimenta estoque. O custo entra como zero, então ele conta como lucro
             cheio nos relatórios.
           </p>
