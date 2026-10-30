@@ -1,10 +1,10 @@
-import { useState } from 'react'
 import { PageHeader, Tabs } from '../../components/ui'
+import { useTabParam } from '../../lib/tabs'
 import { NiveisTab } from './NiveisTab'
 import { MovimentacoesTab } from './MovimentacoesTab'
 
 export function Estoque() {
-  const [tab, setTab] = useState('niveis')
+  const [tab, setTab] = useTabParam(['niveis', 'movimentacoes'], 'niveis')
 
   return (
     <div>

@@ -1,11 +1,11 @@
-import { useState } from 'react'
 import { PageHeader, Tabs } from '../../components/ui'
+import { useTabParam } from '../../lib/tabs'
 import { ProdutosTab } from './ProdutosTab'
 import { CategoriasTab } from './CategoriasTab'
 import { ClientesTab } from './ClientesTab'
 
 export function Cadastro() {
-  const [tab, setTab] = useState('produtos')
+  const [tab, setTab] = useTabParam(['produtos', 'categorias', 'clientes'], 'produtos')
 
   return (
     <div>
