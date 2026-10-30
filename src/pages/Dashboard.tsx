@@ -1,10 +1,19 @@
 import { useEffect, useId, useState } from 'react'
 import { eachDayOfInterval, format, isValid, parseISO } from 'date-fns'
+import clsx from 'clsx'
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { supabase } from '../lib/supabase'
 import { localDayRangeToUtcIso } from '../lib/date'
 import { fetchItemsInBatches } from '../lib/sales'
-import { Button, Card, Input, Label, Loader, PageHeader, StatTile, formatCurrency } from '../components/ui'
+import { formatQuantity } from '../lib/number'
+import { useAuth } from '../contexts/AuthContext'
+import { Button, Card, Input, Label, Loader, StatTile, formatCurrency } from '../components/ui'
+import { WeatherCard } from '../components/WeatherCard'
+import { QuickActions } from '../components/QuickActions'
+import { QuickProductModal } from '../components/QuickProductModal'
+
+/** Cores dos losangos do ranking: as cores da pipa, na ordem da logo. */
+const RANK_COLORS = ['bg-[#ffc83c]', 'bg-[#ff6b1a]', 'bg-[#7fc8ff]']
 
 interface DayPoint {
   date: string
@@ -32,6 +41,9 @@ function isValidDay(value: string) {
 
 export function Dashboard() {
   const fieldId = useId()
+  const { profile } = useAuth()
+  const [quickProductOpen, setQuickProductOpen] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
   const today = format(new Date(), 'yyyy-MM-dd')
   const [start, setStart] = useState(today)
   const [end, setEnd] = useState(today)
@@ -126,15 +138,34 @@ export function Dashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // aviso de "produto cadastrado" some sozinho
+  useEffect(() => {
+    if (!notice) return
+    const timer = setTimeout(() => setNotice(null), 3000)
+    return () => clearTimeout(timer)
+  }, [notice])
+
+  function handleProductSaved(name: string) {
+    setNotice(`${name} cadastrado`)
+    // produto novo entra com estoque zero e conta no "estoque baixo"
+    load()
+  }
+
   const ticketMedio = salesCount > 0 ? faturamento / salesCount : 0
   const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0
   const rangeIsValid = isValidDay(start) && isValidDay(end) && start <= end
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle="Visão geral da loja no período selecionado." />
+      {profile && (
+        <>
+          <WeatherCard firstName={profile.full_name.trim().split(/\s+/)[0] ?? ''} role={profile.role} />
+          <QuickActions role={profile.role} onQuickProduct={() => setQuickProductOpen(true)} />
+        </>
+      )}
 
       <Card className="mb-6">
+        <h2 className="mb-3 font-display text-[22px] font-extrabold text-[#0e2240]">Período</h2>
         <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end sm:gap-4">
           <div>
             <Label htmlFor={`${fieldId}-start`}>De</Label>
@@ -149,7 +180,7 @@ export function Dashboard() {
           </Button>
         </div>
         {!rangeIsValid && (
-          <p className="mt-3 text-sm text-[#d03b3b]">
+          <p className="mt-3 text-sm font-bold text-[#a12424]">
             {isValidDay(start) && isValidDay(end)
               ? 'A data inicial não pode ser maior que a final.'
               : 'Informe as duas datas para filtrar.'}
@@ -169,7 +200,7 @@ export function Dashboard() {
               label="Lucro"
               value={formatCurrency(lucro)}
               tone={lucro < 0 ? 'critical' : 'good'}
-              hint={faturamento > 0 ? `margem de ${margem.toFixed(1)}%` : undefined}
+              hint={faturamento > 0 ? `margem de ${margem.toFixed(1).replace('.', ',')}%` : undefined}
             />
             <StatTile
               label="Estoque baixo"
@@ -181,23 +212,23 @@ export function Dashboard() {
 
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
-              <h3 className="mb-1 text-sm font-semibold text-neutral-900">Faturamento e lucro por dia</h3>
-              <p className="mb-4 text-xs text-neutral-500">
+              <h2 className="mb-1 font-display text-[22px] font-extrabold text-[#0e2240]">Faturamento e lucro por dia</h2>
+              <p className="mb-4 text-sm font-semibold text-[#52607a]">
                 {format(parseISO(loadedRange.start), 'dd/MM/yyyy')} a {format(parseISO(loadedRange.end), 'dd/MM/yyyy')}
               </p>
               <div style={{ width: '100%', height: 260 }}>
                 <ResponsiveContainer>
                   <BarChart data={series} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
-                    <CartesianGrid vertical={false} stroke="#e1e0d9" />
+                    <CartesianGrid vertical={false} stroke="#d5e3f0" />
                     <XAxis
                       dataKey="label"
-                      tick={{ fontSize: 12, fill: '#898781' }}
-                      axisLine={{ stroke: '#c3c2b7' }}
+                      tick={{ fontSize: 12, fill: '#52607a', fontWeight: 700 }}
+                      axisLine={{ stroke: '#8796ae' }}
                       tickLine={false}
                       interval={series.length > 31 ? 'preserveStartEnd' : 0}
                     />
                     <YAxis
-                      tick={{ fontSize: 12, fill: '#898781' }}
+                      tick={{ fontSize: 12, fill: '#52607a', fontWeight: 700 }}
                       axisLine={false}
                       tickLine={false}
                       width={70}
@@ -206,39 +237,59 @@ export function Dashboard() {
                     <Tooltip
                       formatter={(value) => formatCurrency(Number(value))}
                       labelFormatter={(label) => `Dia ${label}`}
-                      contentStyle={{ borderRadius: 8, border: '1px solid #e1e0d9', fontSize: 13 }}
+                      contentStyle={{ borderRadius: 16, border: '2px solid #d5e3f0', fontSize: 13, fontWeight: 700 }}
                     />
                     <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="faturamento" name="Faturamento" fill="#d6247a" radius={[4, 4, 0, 0]} maxBarSize={28} />
-                    <Bar dataKey="lucro" name="Lucro" fill="#0ca30c" radius={[4, 4, 0, 0]} maxBarSize={28} />
+                    <Bar dataKey="faturamento" name="Faturamento" fill="#0e2240" radius={[10, 10, 4, 4]} maxBarSize={28} />
+                    <Bar dataKey="lucro" name="Lucro" fill="#d6247a" radius={[10, 10, 4, 4]} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
-              <p className="mt-3 text-xs text-neutral-400">
+              <p className="mt-3 text-xs font-semibold text-[#52607a]">
                 O lucro considera o preço de custo registrado na venda; itens avulsos (Diversos) entram com custo zero.
               </p>
             </Card>
 
             <Card>
-              <h3 className="mb-4 text-sm font-semibold text-neutral-900">Mais vendidos no período</h3>
+              <h2 className="mb-4 font-display text-[22px] font-extrabold text-[#0e2240]">Mais vendidos</h2>
               {topProducts.length === 0 ? (
-                <p className="text-sm text-neutral-400">Sem vendas no período.</p>
+                <p className="text-sm font-semibold text-[#52607a]">Sem vendas no período.</p>
               ) : (
-                <ul className="space-y-3">
+                <ol className="space-y-3.5">
                   {topProducts.map((p, i) => (
-                    <li key={p.name} className="flex items-center justify-between gap-3 text-sm">
-                      <span className="min-w-0 text-neutral-700">
-                        <span className="mr-2 text-neutral-400">{i + 1}.</span>
-                        {p.name}
+                    <li key={p.name} className="flex items-center gap-3 text-[15px]">
+                      {/* posição dentro de um losango de pipa */}
+                      <span
+                        className={clsx(
+                          'ml-1 flex h-[30px] w-[30px] shrink-0 rotate-45 items-center justify-center rounded-lg',
+                          RANK_COLORS[i] ?? 'bg-[#eef2f7]',
+                        )}
+                      >
+                        <span className="-rotate-45 text-[13px] font-extrabold text-[#0e2240]">{i + 1}</span>
                       </span>
-                      <span className="shrink-0 font-medium text-neutral-900">{p.quantity}</span>
+                      <span className="min-w-0 flex-1 font-extrabold text-[#0e2240]">{p.name}</span>
+                      <span className="shrink-0 font-extrabold text-[#0e2240]">{formatQuantity(p.quantity)}</span>
                     </li>
                   ))}
-                </ul>
+                </ol>
               )}
             </Card>
           </div>
         </>
+      )}
+
+      {quickProductOpen && (
+        <QuickProductModal open onClose={() => setQuickProductOpen(false)} onSaved={handleProductSaved} />
+      )}
+
+      {notice && (
+        <p
+          role="status"
+          className="fixed right-4 bottom-4 z-40 flex items-center gap-2.5 rounded-full bg-[#0e2240] px-5 py-3.5 text-sm font-extrabold text-white shadow-[0_12px_30px_rgba(14,34,64,0.3)] sm:right-8 sm:bottom-8"
+        >
+          <span aria-hidden="true" className="h-2.5 w-2.5 rotate-45 bg-[#ffc83c]" />
+          {notice}
+        </p>
       )}
     </div>
   )

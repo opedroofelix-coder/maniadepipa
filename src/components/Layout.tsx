@@ -3,7 +3,7 @@ import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ShoppingCart, Package, ClipboardList, BarChart3, LogOut, Menu, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
-import type { Role } from '../types/database'
+import { canOpen } from '../lib/access'
 import { Button, Loader } from './ui'
 import { InstallAppButton } from './InstallApp'
 import logo from '../assets/logo.png'
@@ -12,15 +12,14 @@ interface NavItem {
   to: string
   label: string
   icon: typeof LayoutDashboard
-  roles: Role[]
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: ['dono', 'caixa', 'estoquista'] },
-  { to: '/vendas', label: 'Vendas', icon: ShoppingCart, roles: ['dono', 'caixa'] },
-  { to: '/estoque', label: 'Estoque', icon: Package, roles: ['dono', 'estoquista'] },
-  { to: '/cadastro', label: 'Cadastro', icon: ClipboardList, roles: ['dono', 'estoquista'] },
-  { to: '/relatorios', label: 'Relatórios', icon: BarChart3, roles: ['dono'] },
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/vendas', label: 'Vendas', icon: ShoppingCart },
+  { to: '/estoque', label: 'Estoque', icon: Package },
+  { to: '/cadastro', label: 'Cadastro', icon: ClipboardList },
+  { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
 ]
 
 export function Layout() {
@@ -52,8 +51,8 @@ export function Layout() {
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <div className="max-w-sm text-center">
-          <p className="text-sm font-medium text-neutral-900">Não foi possível carregar seu perfil.</p>
-          <p className="mt-1 text-sm text-neutral-500">
+          <p className="text-sm font-extrabold text-[#0e2240]">Não foi possível carregar seu perfil.</p>
+          <p className="mt-1 text-sm font-semibold text-[#52607a]">
             Você está conectado, mas o sistema não conseguiu ler seus dados de acesso. Verifique a conexão e tente de novo.
           </p>
           <div className="mt-4 flex justify-center gap-2">
@@ -71,39 +70,38 @@ export function Layout() {
     return <Navigate to="/login" replace />
   }
 
-  const items = NAV_ITEMS.filter((item) => item.roles.includes(profile.role))
+  const items = NAV_ITEMS.filter((item) => canOpen(item.to, profile.role))
 
   return (
-    <div className="flex h-screen bg-[#f9f9f7]">
+    <div className="flex h-screen bg-[#eaf6ff]">
       {/* fundo escuro da gaveta, só no celular */}
       {menuOpen && (
-        <div className="fixed inset-0 z-30 bg-black/40 lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />
+        <div className="fixed inset-0 z-30 bg-[#0e2240]/45 lg:hidden" onClick={() => setMenuOpen(false)} aria-hidden="true" />
       )}
 
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-neutral-200 bg-white transition-transform duration-200',
+          'fixed inset-y-0 left-0 z-40 flex w-60 flex-col rounded-r-[32px] bg-white transition-transform duration-200',
           'lg:static lg:translate-x-0',
           menuOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
-        <div className="h-1.5 w-full bg-[linear-gradient(90deg,#ffc83c,#ff7a29,#f0384c,#d6247a,#7b3fe4,#2f6fed)]" />
-        <div className="flex items-center gap-3 px-5 py-5">
-          <img src={logo} alt="" className="h-10 w-10 rounded-lg object-contain" />
+        <div className="flex items-center gap-3 px-5 py-6">
+          <img src={logo} alt="" className="h-14 w-14 object-contain" />
           <div className="flex-1">
-            <p className="text-base font-semibold leading-tight text-neutral-900">Mania de Pipa</p>
-            <p className="text-xs text-neutral-500">PDV</p>
+            <p className="font-display text-xl leading-tight font-extrabold text-[#0e2240]">Mania de Pipa</p>
+            <p className="text-[13px] font-semibold text-[#52607a]">PDV da loja</p>
           </div>
           <button
             type="button"
             onClick={() => setMenuOpen(false)}
-            className="-mr-2 inline-flex h-10 w-10 items-center justify-center rounded-lg text-neutral-400 hover:text-neutral-700 lg:hidden"
+            className="-mr-2 inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-[#52607a] hover:bg-[#eef2f7] hover:text-[#0e2240] lg:hidden"
             aria-label="Fechar menu"
           >
             <X size={20} />
           </button>
         </div>
-        <nav className="flex-1 space-y-1 overflow-y-auto px-3">
+        <nav aria-label="Principal" className="flex-1 space-y-1.5 overflow-y-auto px-3">
           {items.map((item) => (
             <NavLink
               key={item.to}
@@ -111,26 +109,40 @@ export function Layout() {
               end={item.to === '/'}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive ? 'bg-[#d6247a]/10 text-[#a81760]' : 'text-neutral-600 hover:bg-neutral-100',
+                  'flex min-h-12 items-center gap-3 rounded-2xl px-4 text-[15px] transition-colors',
+                  isActive ? 'bg-[#0e2240] font-extrabold text-white' : 'font-bold text-[#3b4a66] hover:bg-[#eef2f7]',
                 )
               }
             >
-              <item.icon size={18} />
-              {item.label}
+              {({ isActive }) => (
+                <>
+                  <item.icon size={20} />
+                  <span className="flex-1">{item.label}</span>
+                  {/* losango de pipa marcando a página atual */}
+                  {isActive && <span aria-hidden="true" className="h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#ffc83c]" />}
+                </>
+              )}
             </NavLink>
           ))}
         </nav>
-        <div className="border-t border-neutral-200 p-3">
-          <div className="mb-2 px-2">
-            <p className="truncate text-sm font-medium text-neutral-900">{profile.full_name}</p>
-            <p className="text-xs capitalize text-neutral-500">{profile.role}</p>
+        <div className="p-3">
+          <div className="mb-2 flex items-center gap-3 rounded-[20px] bg-[#eaf6ff] p-3">
+            <span
+              aria-hidden="true"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#ffc83c] font-display text-lg font-extrabold text-[#0e2240]"
+            >
+              {profile.full_name.trim().charAt(0).toUpperCase() || '?'}
+            </span>
+            <div className="min-w-0">
+              <p className="truncate text-sm font-extrabold text-[#0e2240]">{profile.full_name}</p>
+              <p className="text-xs font-semibold capitalize text-[#52607a]">{profile.role}</p>
+            </div>
           </div>
           <InstallAppButton />
           <button
             type="button"
             onClick={() => signOut()}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-100"
+            className="flex min-h-11 w-full items-center gap-2 rounded-2xl px-4 text-sm font-bold text-[#3b4a66] hover:bg-[#eef2f7]"
           >
             <LogOut size={16} />
             Sair
@@ -140,17 +152,17 @@ export function Layout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* barra superior só abaixo de lg, para abrir a gaveta */}
-        <header className="flex items-center gap-3 border-b border-neutral-200 bg-white px-4 py-3 lg:hidden">
+        <header className="flex items-center gap-3 rounded-b-3xl bg-white px-4 py-2 lg:hidden">
           <button
             type="button"
             onClick={() => setMenuOpen(true)}
-            className="-ml-2 inline-flex h-10 w-10 items-center justify-center rounded-lg text-neutral-600 hover:bg-neutral-100"
+            className="-ml-2 inline-flex h-11 w-11 items-center justify-center rounded-[14px] text-[#3b4a66] hover:bg-[#eef2f7]"
             aria-label="Abrir menu"
           >
             <Menu size={22} />
           </button>
-          <img src={logo} alt="" className="h-8 w-8 rounded object-contain" />
-          <p className="text-sm font-semibold text-neutral-900">Mania de Pipa</p>
+          <img src={logo} alt="" className="h-9 w-9 object-contain" />
+          <p className="font-display text-lg font-extrabold text-[#0e2240]">Mania de Pipa</p>
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-8">

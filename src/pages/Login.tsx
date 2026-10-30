@@ -30,13 +30,13 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-[#f9f9f7] p-4">
-      <div className="w-full max-w-sm overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-sm">
+    <div className="flex min-h-screen items-center justify-center bg-[#eaf6ff] p-4">
+      <div className="w-full max-w-sm overflow-hidden rounded-[28px] bg-white shadow-[0_1px_2px_rgba(14,34,64,0.06)]">
         <div className="h-2 w-full bg-[linear-gradient(90deg,#ffc83c,#ff7a29,#f0384c,#d6247a,#7b3fe4,#2f6fed)]" />
         <div className="p-6 sm:p-8">
           <img src={logo} alt="Mania de Pipa" className="mx-auto mb-4 h-20 w-20 object-contain" />
-          <h1 className="text-center text-xl font-semibold text-neutral-900">Mania de Pipa</h1>
-          <p className="mt-1 text-center text-sm text-neutral-500">Entre com sua conta para continuar.</p>
+          <h1 className="text-center font-display text-3xl font-extrabold text-[#0e2240]">Mania de Pipa</h1>
+          <p className="mt-1 text-center text-sm font-semibold text-[#52607a]">Entre com sua conta para continuar.</p>
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
             <Label htmlFor="login-email">E-mail</Label>
@@ -61,13 +61,13 @@ export function Login() {
               onChange={(e) => setPassword(e.target.value)}
             />
           </div>
-          {error && <p className="text-sm text-[#d03b3b]">{error}</p>}
+          {error && <p className="text-sm font-bold text-[#a12424]">{error}</p>}
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? 'Entrando…' : 'Entrar'}
           </Button>
         </form>
           <InstallAppButton className="mt-3 justify-center" />
-          <p className="mt-6 text-xs text-neutral-400">
+          <p className="mt-6 text-center text-xs font-semibold text-[#52607a]">
             O Senhor é meu pastor e nada me faltará.
           </p>
         </div>

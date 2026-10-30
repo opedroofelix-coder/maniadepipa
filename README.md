@@ -11,6 +11,11 @@ externa e sem integração com marketplaces.
 - Tailwind CSS 4
 - [Supabase](https://supabase.com) (Postgres + Auth) como backend
 - React Router, Recharts (gráfico do dashboard), date-fns
+- [Open-Meteo](https://open-meteo.com) para o clima da loja no Dashboard ("dia de pipa" ou
+  "dia de produção"). Não usa chave; a localização e os limites de vento ficam em
+  `src/lib/weather.ts`. A API gratuita é para uso não comercial; para uso comercial, veja o
+  plano pago deles.
+- Fontes Baloo 2 e Nunito empacotadas pelo Fontsource (funcionam offline no app instalado)
 
 ## Estrutura
 

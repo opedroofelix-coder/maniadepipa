@@ -5,7 +5,7 @@ import logo from '../assets/logo.png'
 
 export function Card({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div className={clsx('rounded-xl border border-neutral-200 bg-white p-4 shadow-sm sm:p-5', className)}>
+    <div className={clsx('rounded-3xl bg-white p-4 shadow-[0_1px_2px_rgba(14,34,64,0.06)] sm:p-6', className)}>
       {children}
     </div>
   )
@@ -21,17 +21,17 @@ export function Button({
   size?: 'sm' | 'md' | 'lg'
 }) {
   const base =
-    'inline-flex items-center justify-center gap-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed'
+    'inline-flex items-center justify-center gap-2 rounded-full font-extrabold transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#d6247a] disabled:opacity-50 disabled:cursor-not-allowed'
   const sizes = {
-    sm: 'px-3 py-1.5 text-sm',
-    md: 'px-4 py-2 text-sm',
-    lg: 'px-5 py-3 text-base',
+    sm: 'min-h-11 px-4 text-sm',
+    md: 'min-h-12 px-5 text-[15px]',
+    lg: 'min-h-14 px-6 text-base',
   }
   const variants = {
-    primary: 'bg-[#d6247a] text-white hover:bg-[#a81760]',
-    secondary: 'bg-neutral-100 text-neutral-900 hover:bg-neutral-200',
+    primary: 'bg-[#d6247a] text-white shadow-[0_8px_20px_rgba(214,36,122,0.25)] hover:bg-[#a81760]',
+    secondary: 'bg-[#eef2f7] text-[#0e2240] hover:bg-[#dfe6ef]',
     danger: 'bg-[#d03b3b] text-white hover:bg-[#a82e2e]',
-    ghost: 'text-neutral-700 hover:bg-neutral-100',
+    ghost: 'text-[#3b4a66] hover:bg-[#eef2f7]',
   }
   return <button type="button" className={clsx(base, sizes[size], variants[variant], className)} {...props} />
 }
@@ -48,13 +48,13 @@ export function IconButton({
   const tones = {
     brand: 'hover:text-[#d6247a]',
     danger: 'hover:text-[#d03b3b]',
-    neutral: 'hover:text-neutral-700',
+    neutral: 'hover:text-[#0e2240]',
   }
   return (
     <button
       type="button"
       className={clsx(
-        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-neutral-400 transition-colors disabled:opacity-40',
+        'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] text-[#52607a] transition-colors hover:bg-[#eef2f7] disabled:opacity-40',
         tones[tone],
         className,
       )}
@@ -63,13 +63,17 @@ export function IconButton({
   )
 }
 
+/** Campo de texto e select: 48px de altura, borda com contraste de 3,4:1 e anel rosa no foco. */
+const FIELD_CLASS =
+  'min-h-12 w-full rounded-2xl border-2 border-[#7d8ca6] bg-white px-4 text-base font-semibold text-[#0e2240] outline-none placeholder:font-normal placeholder:text-[#6b7891] focus:border-[#d6247a] focus:ring-4 focus:ring-[#d6247a]/20'
+
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(function Input(props, ref) {
   return (
     <input
       ref={ref}
       {...props}
       className={clsx(
-        'w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-[#d6247a] focus:ring-2 focus:ring-[#d6247a]/20',
+        FIELD_CLASS,
         props.className,
       )}
     />
@@ -92,7 +96,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={clsx(
-        'w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-[#d6247a] focus:ring-2 focus:ring-[#d6247a]/20',
+        FIELD_CLASS,
         props.className,
       )}
     />
@@ -101,7 +105,7 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
 
 export function Label({ children, htmlFor }: { children: ReactNode; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className="mb-1 block text-xs font-medium text-neutral-600">
+    <label htmlFor={htmlFor} className="mb-1.5 block text-[13px] font-extrabold text-[#0e2240]">
       {children}
     </label>
   )
@@ -115,14 +119,14 @@ export function Badge({
   tone?: 'neutral' | 'good' | 'warning' | 'critical' | 'brand'
 }) {
   const tones = {
-    neutral: 'bg-neutral-100 text-neutral-700',
-    good: 'bg-[#0ca30c]/10 text-[#0ca30c]',
-    warning: 'bg-[#fab219]/15 text-[#8a5b00]',
-    critical: 'bg-[#d03b3b]/10 text-[#d03b3b]',
-    brand: 'bg-[#d6247a]/10 text-[#a81760]',
+    neutral: 'bg-[#eef2f7] text-[#3b4a66]',
+    good: 'bg-[#ddf7e8] text-[#0a6b34]',
+    warning: 'bg-[#fff1c7] text-[#7a5200]',
+    critical: 'bg-[#fde4e4] text-[#a12424]',
+    brand: 'bg-[#d6247a]/10 text-[#b0175f]',
   }
   return (
-    <span className={clsx('inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium', tones[tone])}>
+    <span className={clsx('inline-flex items-center rounded-full px-2.5 py-1 text-xs font-extrabold', tones[tone])}>
       {children}
     </span>
   )
@@ -199,7 +203,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#0e2240]/45 p-0 sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
@@ -210,12 +214,12 @@ export function Modal({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={clsx(
-          'max-h-[92vh] w-full overflow-y-auto rounded-t-xl bg-white p-5 shadow-xl outline-none sm:rounded-xl sm:p-6',
+          'max-h-[92vh] w-full overflow-y-auto rounded-t-[28px] bg-white p-5 shadow-[0_24px_60px_rgba(14,34,64,0.3)] outline-none sm:rounded-[28px] sm:p-6',
           wide ? 'sm:max-w-2xl' : 'sm:max-w-md',
         )}
       >
         <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
+          <h2 className="font-display text-[22px] leading-tight font-extrabold text-[#0e2240]">{title}</h2>
           <IconButton tone="neutral" onClick={onClose} aria-label="Fechar" className="-mr-2">
             ✕
           </IconButton>
@@ -263,7 +267,7 @@ export function ConfirmDialog({
   return (
     <Modal open={open} onClose={running ? () => {} : onClose} title={title}>
       <div className="space-y-4">
-        <div className="text-sm text-neutral-600">{message}</div>
+        <div className="text-sm font-semibold text-[#52607a]">{message}</div>
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button variant="secondary" onClick={onClose} disabled={running}>
             {cancelLabel}
@@ -278,7 +282,7 @@ export function ConfirmDialog({
 }
 
 export function EmptyState({ message }: { message: string }) {
-  return <div className="py-10 text-center text-sm text-neutral-500">{message}</div>
+  return <div className="py-10 text-center text-sm font-semibold text-[#52607a]">{message}</div>
 }
 
 /**
@@ -291,11 +295,11 @@ export function Loader({ fullScreen = false, label = 'Carregando…' }: { fullSc
     <div
       className={clsx(
         'flex flex-col items-center justify-center gap-4',
-        fullScreen ? 'h-screen bg-[#f9f9f7]' : 'py-16',
+        fullScreen ? 'h-screen bg-[#eaf6ff]' : 'py-16',
       )}
     >
       <img src={logo} alt="" className={clsx('logo-pulse object-contain', fullScreen ? 'h-20 w-20' : 'h-12 w-12')} />
-      <p role="status" className="text-sm text-neutral-500">
+      <p role="status" className="text-sm font-semibold text-[#52607a]">
         {label}
       </p>
     </div>
@@ -314,16 +318,17 @@ export function StatTile({
   hint?: string
 }) {
   const toneColor = {
-    neutral: 'text-neutral-900',
-    good: 'text-[#0ca30c]',
-    warning: 'text-[#8a5b00]',
-    critical: 'text-[#d03b3b]',
+    neutral: 'text-[#0e2240]',
+    good: 'text-[#0a6b34]',
+    warning: 'text-[#7a5200]',
+    critical: 'text-[#a12424]',
   }
   return (
     <Card>
-      <p className="text-xs font-medium uppercase tracking-wide text-neutral-500">{label}</p>
-      <p className={clsx('mt-2 text-xl font-semibold break-words sm:text-2xl', toneColor[tone])}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-neutral-400">{hint}</p>}
+      <p className="text-sm font-bold text-[#52607a]">{label}</p>
+      {/* quebra só no espaço ("R$" / "12.345,67"), nunca no meio do número */}
+      <p className={clsx('mt-2 font-display text-2xl leading-tight font-extrabold', toneColor[tone])}>{value}</p>
+      {hint && <p className="mt-2 text-xs font-bold text-[#52607a]">{hint}</p>}
     </Card>
   )
 }
@@ -347,17 +352,17 @@ export function Tabs({
   onChange: (id: string) => void
 }) {
   return (
-    <div className="mb-5 flex gap-1 overflow-x-auto border-b border-neutral-200">
+    <div className="mb-5 flex gap-1 overflow-x-auto border-b-2 border-[#d5e3f0]">
       {tabs.map((tab) => (
         <button
           key={tab.id}
           type="button"
           onClick={() => onChange(tab.id)}
           className={clsx(
-            '-mb-px shrink-0 border-b-2 px-4 py-2 text-sm font-medium transition-colors',
+            '-mb-0.5 min-h-11 shrink-0 border-b-[3px] px-4 text-sm font-extrabold transition-colors',
             active === tab.id
-              ? 'border-[#d6247a] text-[#a81760]'
-              : 'border-transparent text-neutral-500 hover:text-neutral-800',
+              ? 'border-[#d6247a] text-[#b0175f]'
+              : 'border-transparent text-[#52607a] hover:text-[#0e2240]',
           )}
         >
           {tab.label}
@@ -370,8 +375,8 @@ export function Tabs({
 export function PageHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
     <div className="mb-6">
-      <h1 className="text-xl font-semibold text-neutral-900">{title}</h1>
-      {subtitle && <p className="mt-1 text-sm text-neutral-500">{subtitle}</p>}
+      <h1 className="font-display text-3xl leading-tight font-extrabold text-[#0e2240]">{title}</h1>
+      {subtitle && <p className="mt-1 text-sm font-semibold text-[#52607a]">{subtitle}</p>}
     </div>
   )
 }

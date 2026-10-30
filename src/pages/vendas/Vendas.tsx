@@ -1,10 +1,10 @@
-import { useState } from 'react'
 import { PageHeader, Tabs } from '../../components/ui'
+import { useTabParam } from '../../lib/tabs'
 import { PDV } from './PDV'
 import { HistoricoTab } from './HistoricoTab'
 
 export function Vendas() {
-  const [tab, setTab] = useState('caixa')
+  const [tab, setTab] = useTabParam(['caixa', 'historico'], 'caixa')
 
   return (
     <div>

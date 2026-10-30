@@ -21,7 +21,7 @@ export function InstallAppButton({ className }: { className?: string }) {
         type="button"
         onClick={() => (mode === 'prompt' ? install() : setIosHelpOpen(true))}
         className={clsx(
-          'flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium text-[#a81760] hover:bg-[#d6247a]/10',
+          'flex min-h-11 w-full items-center gap-2 rounded-2xl px-4 text-sm font-bold text-[#b0175f] hover:bg-[#d6247a]/10',
           className,
         )}
       >
