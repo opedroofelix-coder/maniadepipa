@@ -2,7 +2,16 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatQuantity, isPositiveDecimal, parseDecimal, roundMoney, roundQuantity, toDecimal } from '../../lib/number'
+import {
+  formatQuantity,
+  isPositiveDecimal,
+  parseDecimal,
+  roundMoney,
+  roundQuantity,
+  toDecimal,
+  toMoneyInput,
+  toQuantityInput,
+} from '../../lib/number'
 import type { CashSession, Customer, PaymentMethod, Product, SimplePaymentMethod } from '../../types/database'
 import {
   Badge,
@@ -123,7 +132,7 @@ export function PDV() {
       const existing = prev.find((line) => line.productId === product.id)
       if (existing) {
         return prev.map((line) =>
-          line.id === existing.id ? { ...line, quantity: String(toDecimal(line.quantity) + 1) } : line,
+          line.id === existing.id ? { ...line, quantity: toQuantityInput(toDecimal(line.quantity) + 1) } : line,
         )
       }
       return [
@@ -134,7 +143,7 @@ export function PDV() {
           description: product.name,
           unit: product.unit,
           quantity: '1',
-          unitPrice: String(product.sale_price),
+          unitPrice: toMoneyInput(Number(product.sale_price)),
           costPrice: product.cost_price,
         },
       ]
@@ -163,7 +172,7 @@ export function PDV() {
       if (!line) return prev
       const next = toDecimal(line.quantity) + delta
       if (next <= 0) return prev.filter((l) => l.id !== id)
-      return prev.map((l) => (l.id === id ? { ...l, quantity: String(next) } : l))
+      return prev.map((l) => (l.id === id ? { ...l, quantity: toQuantityInput(next) } : l))
     })
   }
 
@@ -200,8 +209,8 @@ export function PDV() {
         productId: null,
         description,
         unit: 'un',
-        quantity: String(quantity),
-        unitPrice: String(price),
+        quantity: toQuantityInput(quantity),
+        unitPrice: toMoneyInput(price),
         costPrice: 0,
       },
     ])
