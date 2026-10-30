@@ -4,7 +4,12 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { parseDecimal, roundMoney, toDecimal } from '../../lib/number'
 import type { CashSession, CashMovementType } from '../../types/database'
-import { Button, Card, DecimalInput, Label, Modal, Select, formatCurrency } from '../../components/ui'
+import { Button, Card, ChoiceButton, DecimalInput, Input, Label, Modal, formatCurrency } from '../../components/ui'
+
+const MOVE_TYPES: { id: CashMovementType; label: string }[] = [
+  { id: 'sangria', label: 'Sangria (retirada)' },
+  { id: 'suprimento', label: 'Suprimento (reforço)' },
+]
 
 export function CashSessionBar({ session, onChanged }: { session: CashSession | null; onChanged: () => void }) {
   const { profile } = useAuth()
@@ -171,10 +176,10 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     return (
       <Card className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-3">
-          <Lock size={18} className="shrink-0 text-neutral-400" />
+          <Lock size={20} className="shrink-0 text-[#52607a]" />
           <div>
-            <p className="text-sm font-medium text-neutral-900">Caixa fechado</p>
-            <p className="text-xs text-neutral-500">Abra o caixa para começar a vender.</p>
+            <p className="text-[15px] font-extrabold text-[#0e2240]">Caixa fechado</p>
+            <p className="text-sm font-semibold text-[#52607a]">Abra o caixa para começar a vender.</p>
           </div>
         </div>
         <Button onClick={startOpen} className="w-full sm:w-auto">
@@ -191,7 +196,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
                 onChange={(e) => setOpeningAmount(e.target.value)}
               />
             </div>
-            {openError && <p className="text-sm text-[#d03b3b]">{openError}</p>}
+            {openError && <p className="text-sm font-bold text-[#a12424]">{openError}</p>}
             <Button className="w-full" onClick={handleOpen} disabled={saving}>
               {saving ? 'Abrindo…' : 'Abrir'}
             </Button>
@@ -207,31 +212,31 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
   return (
     <Card className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex items-center gap-3">
-        <Unlock size={18} className="shrink-0 text-[#0ca30c]" />
+        <Unlock size={20} className="shrink-0 text-[#0a6b34]" />
         <div>
-          <p className="text-sm font-medium text-neutral-900">Caixa aberto</p>
-          <p className="text-xs text-neutral-500">Abertura: {formatCurrency(session.opening_amount)}</p>
+          <p className="text-[15px] font-extrabold text-[#0e2240]">Caixa aberto</p>
+          <p className="text-sm font-semibold text-[#52607a]">Abertura: {formatCurrency(session.opening_amount)}</p>
         </div>
       </div>
       <div className="flex flex-col gap-2 sm:flex-row">
-        <Button variant="secondary" size="sm" onClick={startMove}>
+        <Button variant="secondary" onClick={startMove}>
           <Wallet size={16} /> Sangria / suprimento
         </Button>
-        <Button variant="danger" size="sm" onClick={startClose}>
+        <Button variant="danger" onClick={startClose}>
           Fechar caixa
         </Button>
       </div>
 
       <Modal open={closeModal} onClose={() => setCloseModal(false)} title="Fechar caixa">
         <div className="space-y-4">
-          <div className="rounded-lg bg-neutral-50 p-3 text-sm">
-            <div className="flex items-center justify-between text-neutral-600">
+          <div className="rounded-2xl bg-[#eaf6ff] p-4 text-sm">
+            <div className="flex items-center justify-between font-bold text-[#3b4a66]">
               <span>Esperado na gaveta</span>
-              <span className="font-medium text-neutral-900">
+              <span className="font-display text-lg font-extrabold text-[#0e2240]">
                 {expected === null ? 'calculando…' : formatCurrency(expected)}
               </span>
             </div>
-            <p className="mt-1 text-xs text-neutral-400">
+            <p className="mt-1 text-xs font-semibold text-[#52607a]">
               Abertura + vendas em dinheiro + suprimentos − sangrias.
             </p>
             {expected !== null && expected < 0 && (
@@ -252,8 +257,8 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
             <div
               className={
                 Math.abs(difference) < 0.01
-                  ? 'rounded-lg bg-[#0ca30c]/10 px-3 py-2 text-sm text-[#0ca30c]'
-                  : 'rounded-lg bg-[#d03b3b]/10 px-3 py-2 text-sm text-[#d03b3b]'
+                  ? 'rounded-2xl bg-[#ddf7e8] px-4 py-3 text-sm font-bold text-[#0a6b34]'
+                  : 'rounded-2xl bg-[#fde4e4] px-4 py-3 text-sm font-bold text-[#a12424]'
               }
             >
               {Math.abs(difference) < 0.01
@@ -261,7 +266,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
                 : `${difference > 0 ? 'Sobra' : 'Quebra'} de ${formatCurrency(Math.abs(difference))}.`}
             </div>
           )}
-          {closeError && <p className="text-sm text-[#d03b3b]">{closeError}</p>}
+          {closeError && <p className="text-sm font-bold text-[#a12424]">{closeError}</p>}
           <Button className="w-full" variant="danger" onClick={handleClose} disabled={saving || expected === null}>
             {saving ? 'Fechando…' : 'Confirmar fechamento'}
           </Button>
@@ -271,15 +276,16 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
       <Modal open={moveModal} onClose={() => setMoveModal(false)} title="Sangria / suprimento">
         <div className="space-y-4">
           <div>
-            <Label htmlFor={`${fieldId}-move-type`}>Tipo</Label>
-            <Select
-              id={`${fieldId}-move-type`}
-              value={moveType}
-              onChange={(e) => setMoveType(e.target.value as CashMovementType)}
-            >
-              <option value="sangria">Sangria (retirada)</option>
-              <option value="suprimento">Suprimento (reforço)</option>
-            </Select>
+            <p id={`${fieldId}-move-type`} className="mb-1.5 text-[13px] font-extrabold text-[#0e2240]">
+              Tipo
+            </p>
+            <div role="group" aria-labelledby={`${fieldId}-move-type`} className="grid grid-cols-2 gap-2">
+              {MOVE_TYPES.map((type) => (
+                <ChoiceButton key={type.id} selected={moveType === type.id} onClick={() => setMoveType(type.id)}>
+                  {type.label}
+                </ChoiceButton>
+              ))}
+            </div>
           </div>
           <div>
             <Label htmlFor={`${fieldId}-move-amount`}>Valor</Label>
@@ -291,14 +297,9 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
           </div>
           <div>
             <Label htmlFor={`${fieldId}-move-reason`}>Motivo</Label>
-            <input
-              id={`${fieldId}-move-reason`}
-              value={moveReason}
-              onChange={(e) => setMoveReason(e.target.value)}
-              className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:border-[#d6247a] focus:ring-2 focus:ring-[#d6247a]/20"
-            />
+            <Input id={`${fieldId}-move-reason`} value={moveReason} onChange={(e) => setMoveReason(e.target.value)} />
           </div>
-          {moveError && <p className="text-sm text-[#d03b3b]">{moveError}</p>}
+          {moveError && <p className="text-sm font-bold text-[#a12424]">{moveError}</p>}
           <Button className="w-full" onClick={handleMovement} disabled={saving}>
             {saving ? 'Registrando…' : 'Registrar'}
           </Button>

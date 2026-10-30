@@ -17,7 +17,7 @@ export function Button({
   className,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'danger-ghost'
   size?: 'sm' | 'md' | 'lg'
 }) {
   const base =
@@ -30,10 +30,37 @@ export function Button({
   const variants = {
     primary: 'bg-[#d6247a] text-white shadow-[0_8px_20px_rgba(214,36,122,0.25)] hover:bg-[#a81760]',
     secondary: 'bg-[#eef2f7] text-[#0e2240] hover:bg-[#dfe6ef]',
-    danger: 'bg-[#d03b3b] text-white hover:bg-[#a82e2e]',
+    // #b42828: branco sobre ele dá 6,5:1 (o vermelho antigo ficava em 4,4:1)
+    danger: 'bg-[#b42828] text-white hover:bg-[#8f1f1f]',
     ghost: 'text-[#3b4a66] hover:bg-[#eef2f7]',
+    // ação destrutiva discreta, para linhas de tabela (ex.: cancelar venda)
+    'danger-ghost': 'text-[#a12424] hover:bg-[#fde4e4]',
   }
   return <button type="button" className={clsx(base, sizes[size], variants[variant], className)} {...props} />
+}
+
+/**
+ * Uma opção de um grupo de escolha única (forma de pagamento, sangria ou
+ * suprimento): pílula de 48px, rosa quando escolhida. aria-pressed diz ao
+ * leitor de tela qual está marcada.
+ */
+export function ChoiceButton({
+  selected,
+  className,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { selected: boolean }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={selected}
+      className={clsx(
+        'inline-flex min-h-12 items-center justify-center rounded-full px-4 text-[15px] font-extrabold transition-colors focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#d6247a] disabled:cursor-not-allowed disabled:opacity-50',
+        selected ? 'bg-[#d6247a] text-white' : 'bg-[#eef2f7] text-[#0e2240] hover:bg-[#dfe6ef]',
+        className,
+      )}
+      {...props}
+    />
+  )
 }
 
 /**
@@ -47,7 +74,7 @@ export function IconButton({
 }: ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'brand' | 'danger' | 'neutral' }) {
   const tones = {
     brand: 'hover:text-[#d6247a]',
-    danger: 'hover:text-[#d03b3b]',
+    danger: 'hover:bg-[#fde4e4] hover:text-[#a12424]',
     neutral: 'hover:text-[#0e2240]',
   }
   return (
