@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { formatQuantity, toDecimal } from '../../lib/number'
+import { formatQuantity, toDecimal, toMoneyInput, toQuantityInput } from '../../lib/number'
 import type { Category, Product } from '../../types/database'
 import {
   Badge,
@@ -77,10 +77,10 @@ export function ProdutosTab() {
       name: p.name,
       category_id: p.category_id ?? '',
       unit: p.unit,
-      cost_price: String(p.cost_price),
-      sale_price: String(p.sale_price),
-      stock_quantity: String(p.stock_quantity),
-      min_stock: String(p.min_stock),
+      cost_price: toMoneyInput(Number(p.cost_price)),
+      sale_price: toMoneyInput(Number(p.sale_price)),
+      stock_quantity: toQuantityInput(Number(p.stock_quantity)),
+      min_stock: toQuantityInput(Number(p.min_stock)),
       active: p.active,
     })
     setError(null)

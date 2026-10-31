@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase'
 import { localDayRangeToUtcIso } from '../lib/date'
 import { fetchItemsInBatches } from '../lib/sales'
 import { formatQuantity } from '../lib/number'
+import { firstName } from '../lib/names'
 import { useAuth } from '../contexts/AuthContext'
 import { Button, Card, Input, Label, Loader, StatTile, formatCurrency } from '../components/ui'
 import { WeatherCard } from '../components/WeatherCard'
@@ -159,7 +160,7 @@ export function Dashboard() {
     <div>
       {profile && (
         <>
-          <WeatherCard firstName={profile.full_name.trim().split(/\s+/)[0] ?? ''} role={profile.role} />
+          <WeatherCard firstName={firstName(profile.full_name)} role={profile.role} />
           <QuickActions role={profile.role} onQuickProduct={() => setQuickProductOpen(true)} />
         </>
       )}

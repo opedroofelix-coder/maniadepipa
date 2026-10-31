@@ -55,3 +55,20 @@ export function roundQuantity(value: number): number {
   if (!Number.isFinite(value)) return 0
   return Math.round((value + Number.EPSILON) * 1000) / 1000
 }
+
+/**
+ * Dinheiro para um campo editável: 12.9 -> "12,90". Sem separador de milhar
+ * para não atrapalhar quem apaga e redigita; parseDecimal lê de volta.
+ */
+export function toMoneyInput(value: number): string {
+  return roundMoney(value).toLocaleString('pt-BR', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+    useGrouping: false,
+  })
+}
+
+/** Quantidade para um campo editável: 2.5 -> "2,5" | 3 -> "3". */
+export function toQuantityInput(value: number): string {
+  return roundQuantity(value).toLocaleString('pt-BR', { maximumFractionDigits: 3, useGrouping: false })
+}
