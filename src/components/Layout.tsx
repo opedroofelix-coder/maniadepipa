@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
-import { LayoutDashboard, ShoppingCart, Package, ClipboardList, BarChart3, LogOut, Menu, X } from 'lucide-react'
+import { LayoutDashboard, ShoppingCart, Package, ClipboardList, BarChart3, Ticket, LogOut, Menu, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
 import { canOpen } from '../lib/access'
@@ -19,6 +19,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/vendas', label: 'Vendas', icon: ShoppingCart },
   { to: '/estoque', label: 'Estoque', icon: Package },
   { to: '/cadastro', label: 'Cadastro', icon: ClipboardList },
+  { to: '/rifas', label: 'Rifas', icon: Ticket },
   { to: '/relatorios', label: 'Relatórios', icon: BarChart3 },
 ]
 

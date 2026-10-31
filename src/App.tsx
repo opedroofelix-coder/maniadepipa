@@ -7,6 +7,7 @@ import { Vendas } from './pages/vendas/Vendas'
 import { Estoque } from './pages/estoque/Estoque'
 import { Cadastro } from './pages/cadastro/Cadastro'
 import { Relatorios } from './pages/relatorios/Relatorios'
+import { Rifas } from './pages/rifas/Rifas'
 import { NaoEncontrada } from './pages/NaoEncontrada'
 
 function App() {
@@ -21,6 +22,7 @@ function App() {
             <Route path="/estoque" element={<Estoque />} />
             <Route path="/cadastro" element={<Cadastro />} />
             <Route path="/relatorios" element={<Relatorios />} />
+            <Route path="/rifas" element={<Rifas />} />
             <Route path="*" element={<NaoEncontrada />} />
           </Route>
         </Routes>
