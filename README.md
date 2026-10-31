@@ -31,10 +31,13 @@ src/
     estoque/     Níveis de estoque, Movimentações
     vendas/      PDV (tela de caixa), Histórico, sessão de caixa
     relatorios/  Vendas por período, valorização de estoque
+    rifas/       Rifas com produtos do estoque (prêmios e valor recebido)
   types/         tipos TypeScript que espelham as tabelas do banco
 supabase/
   migrations/0001_init.sql            schema completo (tabelas, triggers, RLS)
   migrations/0002_seed_categorias.sql categorias iniciais (loja de pipas)
+  migrations/0003_fechamento_negativo.sql permite esperado negativo no fechamento do caixa
+  migrations/0004_rifas.sql           rifas: prêmios reservados do estoque e valor recebido
 ```
 
 ## 1. Criar o projeto no Supabase
@@ -44,7 +47,8 @@ supabase/
 2. No painel do projeto, abra **SQL Editor** e rode, em ordem, o conteúdo dos
    arquivos de `supabase/migrations/`: primeiro `0001_init.sql` (cria todas as
    tabelas, os gatilhos de baixa/entrada de estoque e as políticas de RLS) e
-   depois `0002_seed_categorias.sql` (pré-cadastra as categorias de produtos).
+   depois `0002_seed_categorias.sql` (pré-cadastra as categorias de produtos),
+   `0003_fechamento_negativo.sql` e `0004_rifas.sql`.
    Alternativamente, com a [CLI do Supabase](https://supabase.com/docs/guides/local-development)
    instalada: `supabase link --project-ref SEU_REF && supabase db push`.
 3. Em **Project Settings → API**, copie a **Project URL** e a **anon public key**.
@@ -139,6 +143,24 @@ Arquivos envolvidos:
 - **Fechar caixa**: informa o valor contado na gaveta ao final do turno.
 - **Cancelar venda**: no histórico, cancelar uma venda devolve o estoque dos
   itens automaticamente.
+
+## Rifas
+
+A venda dos números e o sorteio ficam no sistema de rifa que a loja já usa. O
+PDV controla só o que é da loja: os produtos que viraram prêmio e o valor
+recebido. A tela **Rifas** (só para `dono`) funciona assim:
+
+- **Nova rifa**: nome e os produtos do prêmio. Ao criar, os prêmios **saem do
+  estoque na hora** (reserva), para não serem vendidos no balcão. Cada prêmio
+  vira uma saída em Estoque → Movimentações com o motivo `Rifa: <nome>`. Se
+  faltar estoque de algum prêmio, nada é gravado.
+- **Encerrar**: informe o valor recebido com a rifa. Os prêmios continuam fora
+  do estoque (foram para o ganhador). O resultado é o valor recebido menos o
+  custo dos prêmios (preço de custo do dia em que a rifa foi criada).
+- **Cancelar**: os prêmios voltam para o estoque (entrada com o motivo
+  `Rifa cancelada: <nome>`).
+
+O dinheiro da rifa não passa pelo caixa e não entra nos relatórios de vendas.
 
 ## Segurança dos dados (RLS)
 

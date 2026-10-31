@@ -1,4 +1,4 @@
-// Tipos que espelham o schema em supabase/migrations/0001_init.sql
+// Tipos que espelham o schema em supabase/migrations/ (0001_init.sql e 0004_rifas.sql)
 // Escrito à mão (simples o bastante para não depender de codegen).
 
 export type Role = 'dono' | 'caixa' | 'estoquista'
@@ -7,6 +7,7 @@ export type SimplePaymentMethod = 'dinheiro' | 'pix' | 'credito' | 'debito'
 export type SaleStatus = 'completed' | 'cancelled'
 export type CashMovementType = 'sangria' | 'suprimento'
 export type StockMovementType = 'entrada' | 'saida' | 'ajuste'
+export type RaffleStatus = 'aberta' | 'encerrada' | 'cancelada'
 
 export interface Profile {
   id: string
@@ -107,7 +108,29 @@ export interface StockMovement {
   quantity: number
   reason: string | null
   created_by: string | null
+  raffle_id: string | null
   created_at: string
+}
+
+export interface Raffle {
+  id: string
+  name: string
+  notes: string | null
+  status: RaffleStatus
+  amount_received: number | null
+  closed_at: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface RaffleItem {
+  id: string
+  raffle_id: string
+  product_id: string
+  description: string
+  quantity: number
+  cost_price_at_raffle: number
+  sale_price_at_raffle: number
 }
 
 // Placeholder mínimo para o generic do supabase-js (não usamos codegen completo).

@@ -7,6 +7,7 @@ export const ROUTE_ROLES: Record<string, Role[]> = {
   '/estoque': ['dono', 'estoquista'],
   '/cadastro': ['dono', 'estoquista'],
   '/relatorios': ['dono'],
+  '/rifas': ['dono'],
 }
 
 export function canOpen(path: string, role: Role): boolean {
