@@ -39,6 +39,7 @@ supabase/
   migrations/0003_fechamento_negativo.sql permite esperado negativo no fechamento do caixa
   migrations/0004_rifas.sql           rifas: prêmios reservados do estoque e valor recebido
   migrations/0005_travas_rifas_caixa_perfis.sql travas de status da rifa, venda em caixa fechado e nome do vendedor
+  migrations/0006_rifas_cotas.sql     valor e total de cotas, cotas por dia e prêmios editáveis
 ```
 
 ## 1. Criar o projeto no Supabase
@@ -49,7 +50,8 @@ supabase/
    arquivos de `supabase/migrations/`: primeiro `0001_init.sql` (cria todas as
    tabelas, os gatilhos de baixa/entrada de estoque e as políticas de RLS) e
    depois `0002_seed_categorias.sql` (pré-cadastra as categorias de produtos),
-   `0003_fechamento_negativo.sql`, `0004_rifas.sql` e `0005_travas_rifas_caixa_perfis.sql`.
+   `0003_fechamento_negativo.sql`, `0004_rifas.sql`, `0005_travas_rifas_caixa_perfis.sql` e
+   `0006_rifas_cotas.sql`.
    Alternativamente, com a [CLI do Supabase](https://supabase.com/docs/guides/local-development)
    instalada: `supabase link --project-ref SEU_REF && supabase db push`.
 3. Em **Project Settings → API**, copie a **Project URL** e a **anon public key**.
@@ -147,21 +149,32 @@ Arquivos envolvidos:
 
 ## Rifas
 
-A venda dos números e o sorteio ficam no sistema de rifa que a loja já usa. O
-PDV controla só o que é da loja: os produtos que viraram prêmio e o valor
-recebido. A tela **Rifas** (só para `dono`) funciona assim:
+O sorteio fica no sistema de rifa que a loja já usa. O PDV controla os
+prêmios, as cotas vendidas e o dinheiro. A tela **Rifas** (só para `dono`)
+lista as rifas com um resumo (cotas vendidas, valor da rifa, arrecadado e lucro
+estimado); tocar numa rifa abre o detalhe em `/rifas/<id>`.
 
-- **Nova rifa**: nome e os produtos do prêmio. Ao criar, os prêmios **saem do
-  estoque na hora** (reserva), para não serem vendidos no balcão. Cada prêmio
-  vira uma saída em Estoque → Movimentações com o motivo `Rifa: <nome>`. Se
-  faltar estoque de algum prêmio, nada é gravado.
-- **Encerrar**: informe o valor recebido com a rifa. Os prêmios continuam fora
-  do estoque (foram para o ganhador). O resultado é o valor recebido menos o
-  custo dos prêmios (preço de custo do dia em que a rifa foi criada).
-- **Cancelar**: os prêmios voltam para o estoque (entrada com o motivo
-  `Rifa cancelada: <nome>`).
+- **Nova rifa**: nome, data do sorteio, prêmios e, se já souber, o valor da
+  cota (ou o valor total da rifa) e o total de cotas. Os prêmios **saem do
+  estoque na hora**, como saída `Rifa: <nome>` em Estoque → Movimentações.
+- **Editar rifa**: nome, observação, sorteio, valor e total de cotas, com o
+  cálculo ao vivo (valor da rifa, lucro estimado, % de ganho, margem e com
+  quantas cotas os prêmios ficam pagos). O total não pode ficar abaixo das
+  cotas já vendidas.
+- **Prêmios**: com a rifa aberta, dá para adicionar, mudar a quantidade ou
+  excluir. Aumentar tira do estoque, diminuir ou excluir devolve.
+- **Cotas vendidas por dia**: um registro por dia, que pode ser corrigido ou
+  excluído. O total nunca passa das cotas da rifa.
+- **Encerrar**: o valor recebido já vem preenchido com o arrecadado. O
+  resultado é o recebido menos o custo dos prêmios.
+- **Cancelar**: os prêmios voltam para o estoque e a rifa sai dos totais.
 
-O dinheiro da rifa não passa pelo caixa e não entra nos relatórios de vendas.
+**Dashboard**: as cotas de cada dia entram como dinheiro que entrou e como
+lucro do dia. Cada cota carrega a sua parte do custo dos prêmios (custo ÷ total
+de cotas); ao encerrar, o custo das cotas não vendidas entra no dia do
+encerramento, e o total fecha no resultado da rifa. As contas ficam em
+`src/lib/raffles.ts`. O dinheiro das rifas não passa pelo caixa e não entra no
+relatório de vendas.
 
 ## Segurança dos dados (RLS)
 

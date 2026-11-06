@@ -8,6 +8,7 @@ import { Estoque } from './pages/estoque/Estoque'
 import { Cadastro } from './pages/cadastro/Cadastro'
 import { Relatorios } from './pages/relatorios/Relatorios'
 import { Rifas } from './pages/rifas/Rifas'
+import { RifaDetalhe } from './pages/rifas/RifaDetalhe'
 import { NaoEncontrada } from './pages/NaoEncontrada'
 
 function App() {
@@ -23,6 +24,7 @@ function App() {
             <Route path="/cadastro" element={<Cadastro />} />
             <Route path="/relatorios" element={<Relatorios />} />
             <Route path="/rifas" element={<Rifas />} />
+            <Route path="/rifas/:id" element={<RifaDetalhe />} />
             <Route path="*" element={<NaoEncontrada />} />
           </Route>
         </Routes>
