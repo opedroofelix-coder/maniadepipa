@@ -38,6 +38,8 @@ const STATUS_LABEL: Record<RaffleStatus, string> = {
   cancelada: 'Cancelada',
 }
 
+const STALE_MESSAGE = 'Esta rifa já tinha sido encerrada ou cancelada em outra tela. A lista foi atualizada.'
+
 const STATUS_TONE: Record<RaffleStatus, 'brand' | 'good' | 'neutral'> = {
   aberta: 'brand',
   encerrada: 'good',
@@ -206,10 +208,15 @@ export function Rifas() {
       return
     }
     setClosing(true)
-    const { error } = await supabase
+    setListError(null)
+    // só muda rifa que ainda está aberta: outra aba pode ter encerrado ou
+    // cancelado esta rifa depois que a lista carregou
+    const { data, error } = await supabase
       .from('raffles')
       .update({ status: 'encerrada', amount_received: roundMoney(received), closed_at: new Date().toISOString() })
       .eq('id', toClose.id)
+      .eq('status', 'aberta')
+      .select('id')
     setClosing(false)
     if (error) {
       console.error('raffles close', error)
@@ -217,19 +224,26 @@ export function Rifas() {
       return
     }
     setToClose(null)
+    if (!data || data.length === 0) setListError(STALE_MESSAGE)
     load()
   }
 
   async function handleCancel() {
     if (!toCancel) return
     setListError(null)
-    const { error } = await supabase.from('raffles').update({ status: 'cancelada' }).eq('id', toCancel.id)
+    const { data, error } = await supabase
+      .from('raffles')
+      .update({ status: 'cancelada' })
+      .eq('id', toCancel.id)
+      .eq('status', 'aberta')
+      .select('id')
     setToCancel(null)
     if (error) {
       console.error('raffles cancel', error)
       setListError('Não foi possível cancelar a rifa.')
       return
     }
+    if (!data || data.length === 0) setListError(STALE_MESSAGE)
     load()
   }
 
