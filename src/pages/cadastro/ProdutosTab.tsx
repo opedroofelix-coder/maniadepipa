@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { sameName } from '../../lib/names'
 import { formatQuantity, parseDecimal, roundMoney, roundQuantity, toMoneyInput, toQuantityInput } from '../../lib/number'
 import type { Category, Product } from '../../types/database'
 import {
@@ -97,7 +98,8 @@ export function ProdutosTab() {
       load()
       return
     }
-    // sale_items referencia products sem on delete: produto já vendido não sai
+    // sale_items e raffle_items referenciam products sem on delete: produto já
+    // vendido ou sorteado não sai
     const isInUse = deleteError.code === '23503' || deleteError.message.includes('foreign key')
     if (!isInUse) {
       setListError('Não foi possível excluir o produto.')
@@ -123,6 +125,11 @@ export function ProdutosTab() {
   async function handleSave() {
     if (!form.name.trim()) {
       setError('Informe o nome do produto.')
+      return
+    }
+    const twin = products.find((p) => p.id !== form.id && sameName(p.name, form.name))
+    if (twin) {
+      setError(`Já existe um produto chamado "${twin.name}"${twin.active ? '' : ' (inativo)'}.`)
       return
     }
     // texto inválido não pode virar zero em silêncio: um preço de venda
@@ -377,8 +384,8 @@ export function ProdutosTab() {
 
       <ConfirmDialog
         open={toDeactivate !== null}
-        title="Produto com vendas registradas"
-        message={`"${toDeactivate?.name ?? ''}" já tem vendas registradas e não pode ser excluído, senão o histórico ficaria quebrado. Deseja inativá-lo? Ele deixa de aparecer no PDV.`}
+        title="Produto com histórico"
+        message={`"${toDeactivate?.name ?? ''}" já aparece em vendas ou rifas e não pode ser excluído, senão o histórico ficaria quebrado. Deseja inativá-lo? Ele deixa de aparecer no PDV e nas rifas.`}
         confirmLabel="Inativar"
         tone="primary"
         onConfirm={handleDeactivate}

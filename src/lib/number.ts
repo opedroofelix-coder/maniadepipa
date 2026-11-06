@@ -72,3 +72,16 @@ export function toMoneyInput(value: number): string {
 export function toQuantityInput(value: number): string {
   return roundQuantity(value).toLocaleString('pt-BR', { maximumFractionDigits: 3, useGrouping: false })
 }
+
+// Unidades que só existem inteiras: não dá para vender ou sortear meia pipa.
+// kg, m e l continuam aceitando fração (0,5 kg de linha).
+const WHOLE_UNITS = new Set(['un', 'cx', 'pct'])
+
+export function isWholeUnit(unit: string): boolean {
+  return WHOLE_UNITS.has(unit)
+}
+
+/** Mensagem para quantidade fracionada num produto de unidade inteira. */
+export function wholeUnitMessage(name: string, unit: string): string {
+  return `${name} é contado em ${unit}: use uma quantidade inteira.`
+}

@@ -5,12 +5,14 @@ import { useAuth } from '../../contexts/AuthContext'
 import {
   formatQuantity,
   isPositiveDecimal,
+  isWholeUnit,
   parseDecimal,
   roundMoney,
   roundQuantity,
   toDecimal,
   toMoneyInput,
   toQuantityInput,
+  wholeUnitMessage,
 } from '../../lib/number'
 import type { CashSession, Customer, PaymentMethod, Product, SimplePaymentMethod } from '../../types/database'
 import {
@@ -272,6 +274,14 @@ export function PDV() {
     )
     if (invalidLine) {
       setError(`Confira a quantidade e o preço de "${invalidLine.description.trim() || 'item sem descrição'}".`)
+      return
+    }
+    // item avulso fica de fora: é um valor livre ("Conserto de pipa"), sem estoque
+    const fractionalLine = cart.find(
+      (l) => l.productId !== null && isWholeUnit(l.unit) && !Number.isInteger(parseDecimal(l.quantity)),
+    )
+    if (fractionalLine) {
+      setError(wholeUnitMessage(fractionalLine.description, fractionalLine.unit))
       return
     }
     if (discount.trim() && Number.isNaN(parseDecimal(discount))) {

@@ -3,7 +3,7 @@ import { Plus } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatQuantity, parseDecimal } from '../../lib/number'
+import { formatQuantity, isWholeUnit, parseDecimal, wholeUnitMessage } from '../../lib/number'
 import type { Product, StockMovement, StockMovementType } from '../../types/database'
 import {
   Badge,
@@ -80,9 +80,14 @@ export function MovimentacoesTab() {
       setError('Quantidade deve ser maior que zero.')
       return
     }
+    const selected = products.find((p) => p.id === productId)
+    // o ajuste aceita fração para corrigir estoque que já ficou quebrado (6,5 un)
+    if (selected && type !== 'ajuste' && isWholeUnit(selected.unit) && !Number.isInteger(qty)) {
+      setError(wholeUnitMessage(selected.name, selected.unit))
+      return
+    }
     // saída/ajuste negativo não pode derrubar o estoque abaixo de zero: o check
     // do banco recusaria a gravação com um erro sem explicação
-    const selected = products.find((p) => p.id === productId)
     const delta = type === 'entrada' ? qty : type === 'saida' ? -qty : qty
     if (selected && Number(selected.stock_quantity) + delta < 0) {
       setError(

@@ -1,5 +1,6 @@
 import { useId, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { sameName } from '../lib/names'
 import { parseDecimal, roundMoney } from '../lib/number'
 import { Button, DecimalInput, Input, Label, Modal, formatCurrency } from './ui'
 
@@ -41,6 +42,20 @@ export function QuickProductModal({
 
     setSaving(true)
     setError(null)
+    // o cadastro rápido é usado em sequência, e o mesmo produto acabava duas vezes
+    // no catálogo; o nome é comparado sem maiúsculas nem acentos
+    const { data: existing, error: lookupError } = await supabase.from('products').select('name, active')
+    if (lookupError) {
+      setSaving(false)
+      setError('Não foi possível salvar o produto. Confira a internet e tente de novo.')
+      return
+    }
+    const twin = (existing ?? []).find((p) => sameName(p.name as string, name))
+    if (twin) {
+      setSaving(false)
+      setError(`Já existe um produto chamado "${twin.name}"${twin.active ? '' : ' (inativo)'}. Use outro nome ou edite o existente em Cadastro.`)
+      return
+    }
     const { error: saveError } = await supabase
       .from('products')
       .insert({ name, cost_price: roundMoney(cost), sale_price: roundMoney(sale) })

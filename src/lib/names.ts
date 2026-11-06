@@ -14,3 +14,18 @@ export function firstName(fullName: string): string {
   if (!word) return ''
   return word.charAt(0).toLocaleUpperCase('pt-BR') + word.slice(1)
 }
+
+/** Nome comparável: sem diferença de maiúsculas, acentos e espaços repetidos. */
+function nameKey(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/\p{M}/gu, '')
+    .toLocaleLowerCase('pt-BR')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/** "Acessórios" e "  acessorios" são o mesmo nome para fins de cadastro duplicado. */
+export function sameName(a: string, b: string): boolean {
+  return nameKey(a) === nameKey(b)
+}

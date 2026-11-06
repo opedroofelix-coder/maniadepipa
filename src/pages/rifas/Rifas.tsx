@@ -3,7 +3,7 @@ import { Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
-import { formatQuantity, parseDecimal, roundMoney, roundQuantity } from '../../lib/number'
+import { formatQuantity, isWholeUnit, parseDecimal, roundMoney, roundQuantity, wholeUnitMessage } from '../../lib/number'
 import type { Product, Raffle, RaffleItem, RaffleStatus } from '../../types/database'
 import {
   Badge,
@@ -38,6 +38,9 @@ const STATUS_LABEL: Record<RaffleStatus, string> = {
   cancelada: 'Cancelada',
 }
 
+// amount_received é numeric(12,2): acima disso o banco recusa com um erro sem explicação
+const MAX_AMOUNT = 9_999_999_999.99
+
 const STALE_MESSAGE = 'Esta rifa já tinha sido encerrada ou cancelada em outra tela. A lista foi atualizada.'
 
 const STATUS_TONE: Record<RaffleStatus, 'brand' | 'good' | 'neutral'> = {
@@ -49,6 +52,19 @@ const STATUS_TONE: Record<RaffleStatus, 'brand' | 'good' | 'neutral'> = {
 /** Custo dos prêmios pelo preço de custo gravado quando a rifa foi criada. */
 function prizeCost(raffle: RaffleWithItems): number {
   return roundMoney(raffle.raffle_items.reduce((sum, i) => sum + Number(i.quantity) * Number(i.cost_price_at_raffle), 0))
+}
+
+/** "Pipa Arraia tem 2 un; Carretilha tem 0 un", ou "" quando há estoque para tudo. */
+function stockShortage(byProduct: Map<string, number>, products: Product[]): string {
+  return Array.from(byProduct)
+    .map(([productId, qty]) => {
+      const product = products.find((p) => p.id === productId)
+      return product && Number(product.stock_quantity) < qty
+        ? `${product.name} tem ${formatQuantity(Number(product.stock_quantity))} ${product.unit}`
+        : null
+    })
+    .filter(Boolean)
+    .join('; ')
 }
 
 function prizeSummary(raffle: RaffleWithItems): string {
@@ -138,17 +154,18 @@ export function Rifas() {
         setCreateError('A quantidade de cada prêmio deve ser maior que zero.')
         return
       }
+      const product = products.find((p) => p.id === l.productId)
+      if (product && isWholeUnit(product.unit) && !Number.isInteger(qty)) {
+        setCreateError(wholeUnitMessage(product.name, product.unit))
+        return
+      }
       byProduct.set(l.productId, roundQuantity((byProduct.get(l.productId) ?? 0) + qty))
     }
     // o check do banco recusaria a rifa inteira com um erro sem explicação
-    for (const [productId, qty] of byProduct) {
-      const product = products.find((p) => p.id === productId)
-      if (product && Number(product.stock_quantity) < qty) {
-        setCreateError(
-          `Estoque insuficiente: ${product.name} tem ${formatQuantity(Number(product.stock_quantity))} ${product.unit}.`,
-        )
-        return
-      }
+    const shortage = stockShortage(byProduct, products)
+    if (shortage) {
+      setCreateError(`Estoque insuficiente: ${shortage}.`)
+      return
     }
 
     setSaving(true)
@@ -184,7 +201,17 @@ export function Rifas() {
       console.error('raffle_items insert', itemsError)
       // desfaz a rifa para não sobrar uma rifa sem prêmios
       await supabase.from('raffles').delete().eq('id', raffle.id)
-      setCreateError('Não foi possível reservar os prêmios. Nada foi gravado; confira o estoque e tente de novo.')
+      // o estoque pode ter mudado em outra tela depois que a lista carregou:
+      // relê para dizer qual produto faltou em vez de um erro genérico
+      const { data: fresh } = await supabase.from('products').select('*').eq('active', true).order('name')
+      const freshProducts = (fresh as Product[] | null) ?? []
+      if (freshProducts.length > 0) setProducts(freshProducts)
+      const freshShortage = stockShortage(byProduct, freshProducts)
+      setCreateError(
+        freshShortage
+          ? `Estoque insuficiente: ${freshShortage}. O estoque mudou enquanto a rifa era criada; nada foi gravado.`
+          : 'Não foi possível reservar os prêmios. Nada foi gravado; confira o estoque e tente de novo.',
+      )
       setSaving(false)
       return
     }
@@ -205,6 +232,10 @@ export function Rifas() {
     const received = parseDecimal(amount)
     if (Number.isNaN(received) || received < 0) {
       setCloseError('Informe o valor recebido com a rifa (pode ser 0).')
+      return
+    }
+    if (received > MAX_AMOUNT) {
+      setCloseError(`Valor alto demais. O máximo é ${formatCurrency(MAX_AMOUNT)}.`)
       return
     }
     setClosing(true)
