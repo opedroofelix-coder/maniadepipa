@@ -5,7 +5,8 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import { supabase } from '../lib/supabase'
 import { localDayRangeToUtcIso } from '../lib/date'
 import { fetchItemsInBatches } from '../lib/sales'
-import { formatQuantity } from '../lib/number'
+import { raffleDailyEntries, type RaffleForMath } from '../lib/raffles'
+import { formatQuantity, roundMoney } from '../lib/number'
 import { firstName } from '../lib/names'
 import { useAuth } from '../contexts/AuthContext'
 import { Button, Card, Input, Label, Loader, StatTile, formatCurrency } from '../components/ui'
@@ -20,8 +21,20 @@ interface DayPoint {
   date: string
   label: string
   faturamento: number
+  rifas: number
   lucro: number
 }
+
+/** O que cada rifa trouxe no período: dinheiro das cotas e lucro (src/lib/raffles.ts). */
+interface RafflePeriod {
+  id: string
+  name: string
+  tickets: number
+  money: number
+  profit: number
+}
+
+type RaffleRow = RaffleForMath & { id: string; name: string }
 
 interface TopProduct {
   name: string
@@ -55,6 +68,7 @@ export function Dashboard() {
   const [faturamento, setFaturamento] = useState(0)
   const [lucro, setLucro] = useState(0)
   const [lowStockCount, setLowStockCount] = useState(0)
+  const [rafflesInPeriod, setRafflesInPeriod] = useState<RafflePeriod[]>([])
   const [series, setSeries] = useState<DayPoint[]>([])
   const [topProducts, setTopProducts] = useState<TopProduct[]>([])
   const [loading, setLoading] = useState(true)
@@ -64,7 +78,7 @@ export function Dashboard() {
     setLoading(true)
 
     const { startIso, endIso } = localDayRangeToUtcIso(start, end)
-    const [{ data: sales }, { data: products }] = await Promise.all([
+    const [{ data: sales }, { data: products }, { data: raffles }] = await Promise.all([
       supabase
         .from('sales')
         .select('id, total, discount, created_at')
@@ -72,6 +86,14 @@ export function Dashboard() {
         .gte('created_at', startIso)
         .lte('created_at', endIso),
       supabase.from('products').select('stock_quantity, min_stock').eq('active', true),
+      // cotas de rifa entram como dinheiro e lucro do dia em que foram vendidas;
+      // rifa cancelada não entra (ver raffleDailyEntries)
+      supabase
+        .from('raffles')
+        .select(
+          'id, name, status, ticket_price, total_tickets, amount_received, closed_at, raffle_items(quantity, cost_price_at_raffle), raffle_ticket_sales(sale_date, quantity)',
+        )
+        .neq('status', 'cancelada'),
     ])
 
     const saleRows = (sales as SaleRow[]) ?? []
@@ -86,9 +108,34 @@ export function Dashboard() {
       0,
     )
 
+    // rifas: o que cada uma trouxe dentro do período, dia a dia
+    const raffleRows = (raffles as unknown as RaffleRow[]) ?? []
+    const inPeriod = (day: string) => day >= start && day <= end
+    const raffleDays = new Map<string, { money: number; profit: number }>()
+    const perRaffle: RafflePeriod[] = []
+    raffleRows.forEach((r) => {
+      const entries = raffleDailyEntries(r).filter((e) => inPeriod(e.date))
+      if (entries.length === 0) return
+      entries.forEach((e) => {
+        const acc = raffleDays.get(e.date) ?? { money: 0, profit: 0 }
+        acc.money += e.money
+        acc.profit += e.profit
+        raffleDays.set(e.date, acc)
+      })
+      perRaffle.push({
+        id: r.id,
+        name: r.name,
+        tickets: r.raffle_ticket_sales.filter((t) => inPeriod(t.sale_date)).reduce((sum, t) => sum + Number(t.quantity), 0),
+        money: roundMoney(entries.reduce((sum, e) => sum + e.money, 0)),
+        profit: roundMoney(entries.reduce((sum, e) => sum + e.profit, 0)),
+      })
+    })
+    perRaffle.sort((a, b) => b.money - a.money)
+
     setSalesCount(saleRows.length)
     setFaturamento(totalFaturamento)
     setLucro(lucroBruto - totalDescontos)
+    setRafflesInPeriod(perRaffle)
     setLowStockCount((products ?? []).filter((p) => Number(p.stock_quantity) <= Number(p.min_stock)).length)
 
     // série diária: faturamento e lucro por dia do período
@@ -115,7 +162,14 @@ export function Dashboard() {
       days.map((d) => {
         const key = format(d, 'yyyy-MM-dd')
         const acc = byDay.get(key) ?? { faturamento: 0, lucro: 0 }
-        return { date: key, label: format(d, 'dd/MM'), faturamento: acc.faturamento, lucro: acc.lucro }
+        const raffle = raffleDays.get(key) ?? { money: 0, profit: 0 }
+        return {
+          date: key,
+          label: format(d, 'dd/MM'),
+          faturamento: roundMoney(acc.faturamento),
+          rifas: roundMoney(raffle.money),
+          lucro: roundMoney(acc.lucro + raffle.profit),
+        }
       }),
     )
 
@@ -152,8 +206,14 @@ export function Dashboard() {
     load()
   }
 
+  const raffleMoney = roundMoney(rafflesInPeriod.reduce((sum, r) => sum + r.money, 0))
+  const raffleProfit = roundMoney(rafflesInPeriod.reduce((sum, r) => sum + r.profit, 0))
+  const raffleTickets = rafflesInPeriod.reduce((sum, r) => sum + r.tickets, 0)
+  // entrou = vendas da loja + cotas de rifa; o lucro soma os dois
+  const entrou = roundMoney(faturamento + raffleMoney)
+  const lucroTotal = roundMoney(lucro + raffleProfit)
   const ticketMedio = salesCount > 0 ? faturamento / salesCount : 0
-  const margem = faturamento > 0 ? (lucro / faturamento) * 100 : 0
+  const margem = entrou > 0 ? (lucroTotal / entrou) * 100 : 0
   const rangeIsValid = isValidDay(start) && isValidDay(end) && start <= end
 
   return (
@@ -193,15 +253,30 @@ export function Dashboard() {
         <Loader />
       ) : (
         <>
-          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+            <StatTile
+              label="Entrou no período"
+              value={formatCurrency(entrou)}
+              hint={rafflesInPeriod.length > 0 ? `vendas ${formatCurrency(faturamento)} + rifas ${formatCurrency(raffleMoney)}` : 'vendas da loja'}
+            />
             <StatTile label="Vendas no período" value={String(salesCount)} />
-            <StatTile label="Faturamento" value={formatCurrency(faturamento)} />
-            <StatTile label="Ticket médio" value={formatCurrency(ticketMedio)} />
+            <StatTile label="Ticket médio" value={formatCurrency(ticketMedio)} hint="só vendas da loja" />
+            <StatTile
+              label="Cotas de rifa"
+              value={String(raffleTickets)}
+              hint={rafflesInPeriod.length > 0 ? `em ${rafflesInPeriod.length} ${rafflesInPeriod.length === 1 ? 'rifa' : 'rifas'}` : 'nenhuma no período'}
+            />
             <StatTile
               label="Lucro"
-              value={formatCurrency(lucro)}
-              tone={lucro < 0 ? 'critical' : 'good'}
-              hint={faturamento > 0 ? `margem de ${margem.toFixed(1).replace('.', ',')}%` : undefined}
+              value={formatCurrency(lucroTotal)}
+              tone={lucroTotal < 0 ? 'critical' : 'good'}
+              hint={
+                rafflesInPeriod.length > 0
+                  ? `vendas ${formatCurrency(roundMoney(lucro))} + rifas ${formatCurrency(raffleProfit)}`
+                  : entrou > 0
+                    ? `margem de ${margem.toFixed(1).replace('.', ',')}%`
+                    : undefined
+              }
             />
             <StatTile
               label="Estoque baixo"
@@ -213,7 +288,7 @@ export function Dashboard() {
 
           <div className="mb-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
             <Card className="lg:col-span-2">
-              <h2 className="mb-1 font-display text-[22px] font-extrabold text-[#0e2240]">Faturamento e lucro por dia</h2>
+              <h2 className="mb-1 font-display text-[22px] font-extrabold text-[#0e2240]">Dinheiro que entrou e lucro por dia</h2>
               <p className="mb-4 text-sm font-semibold text-[#52607a]">
                 {format(parseISO(loadedRange.start), 'dd/MM/yyyy')} a {format(parseISO(loadedRange.end), 'dd/MM/yyyy')}
               </p>
@@ -236,45 +311,87 @@ export function Dashboard() {
                       tickFormatter={(v) => formatCurrency(v)}
                     />
                     <Tooltip
+                      // mesma ordem das barras e da legenda
+                      itemSorter={(item) => ['faturamento', 'rifas', 'lucro'].indexOf(String(item.dataKey))}
                       formatter={(value) => formatCurrency(Number(value))}
                       labelFormatter={(label) => `Dia ${label}`}
                       contentStyle={{ borderRadius: 16, border: '2px solid #d5e3f0', fontSize: 13, fontWeight: 700 }}
                     />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="faturamento" name="Faturamento" fill="#0e2240" radius={[10, 10, 4, 4]} maxBarSize={28} />
+                    {/* na ordem das barras (vendas, rifas, lucro), não em ordem alfabética */}
+                    <Legend wrapperStyle={{ fontSize: 12 }} itemSorter={null} />
+                    {/* vendas e cotas de rifa empilhadas: a coluna inteira é o que entrou no dia */}
+                    <Bar dataKey="faturamento" name="Vendas" stackId="entrou" fill="#0e2240" maxBarSize={28} />
+                    <Bar dataKey="rifas" name="Cotas de rifa" stackId="entrou" fill="#ffc83c" radius={[10, 10, 0, 0]} maxBarSize={28} />
                     <Bar dataKey="lucro" name="Lucro" fill="#d6247a" radius={[10, 10, 4, 4]} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
               <p className="mt-3 text-xs font-semibold text-[#52607a]">
-                O lucro considera o preço de custo registrado na venda; itens avulsos (Diversos) entram com custo zero.
+                O lucro das vendas considera o preço de custo registrado na venda (itens avulsos entram com custo zero). O de
+                cada cota de rifa é o valor da cota menos a parte dela no custo dos prêmios; ao encerrar a rifa, o custo das
+                cotas não vendidas entra no dia do encerramento.
               </p>
             </Card>
 
-            <Card>
-              <h2 className="mb-4 font-display text-[22px] font-extrabold text-[#0e2240]">Mais vendidos</h2>
-              {topProducts.length === 0 ? (
-                <p className="text-sm font-semibold text-[#52607a]">Sem vendas no período.</p>
-              ) : (
-                <ol className="space-y-3.5">
-                  {topProducts.map((p, i) => (
-                    <li key={p.name} className="flex items-center gap-3 text-[15px]">
-                      {/* posição dentro de um losango de pipa */}
-                      <span
-                        className={clsx(
-                          'ml-1 flex h-[30px] w-[30px] shrink-0 rotate-45 items-center justify-center rounded-lg',
-                          RANK_COLORS[i] ?? 'bg-[#eef2f7]',
-                        )}
-                      >
-                        <span className="-rotate-45 text-[13px] font-extrabold text-[#0e2240]">{i + 1}</span>
+            <div className="space-y-6">
+              <Card>
+                <h2 className="mb-4 font-display text-[22px] font-extrabold text-[#0e2240]">Mais vendidos</h2>
+                {topProducts.length === 0 ? (
+                  <p className="text-sm font-semibold text-[#52607a]">Sem vendas no período.</p>
+                ) : (
+                  <ol className="space-y-3.5">
+                    {topProducts.map((p, i) => (
+                      <li key={p.name} className="flex items-center gap-3 text-[15px]">
+                        {/* posição dentro de um losango de pipa */}
+                        <span
+                          className={clsx(
+                            'ml-1 flex h-[30px] w-[30px] shrink-0 rotate-45 items-center justify-center rounded-lg',
+                            RANK_COLORS[i] ?? 'bg-[#eef2f7]',
+                          )}
+                        >
+                          <span className="-rotate-45 text-[13px] font-extrabold text-[#0e2240]">{i + 1}</span>
+                        </span>
+                        <span className="min-w-0 flex-1 font-extrabold text-[#0e2240]">{p.name}</span>
+                        <span className="shrink-0 font-extrabold text-[#0e2240]">{formatQuantity(p.quantity)}</span>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </Card>
+
+              {rafflesInPeriod.length > 0 && (
+                <Card>
+                  <h2 className="mb-3 font-display text-[22px] font-extrabold text-[#0e2240]">Rifas no período</h2>
+                  <ul className="divide-y divide-[#eef2f7]">
+                    {rafflesInPeriod.map((r) => (
+                      <li key={r.id} className="flex items-center justify-between gap-3 py-2.5 text-sm">
+                        <span className="min-w-0">
+                          <span className="block font-extrabold break-words text-[#0e2240]">{r.name}</span>
+                          <span className="text-xs font-semibold text-[#52607a]">
+                            {r.tickets} {r.tickets === 1 ? 'cota' : 'cotas'}
+                          </span>
+                        </span>
+                        <span className="shrink-0 text-right">
+                          <span className="block font-extrabold text-[#0e2240]">{formatCurrency(r.money)}</span>
+                          <span className={r.profit < 0 ? 'text-xs font-bold text-[#a12424]' : 'text-xs font-bold text-[#0a6b34]'}>
+                            lucro {formatCurrency(r.profit)}
+                          </span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="mt-2 flex items-center justify-between gap-3 border-t-2 border-[#d5e3f0] pt-3 text-sm">
+                    <span className="font-extrabold text-[#0e2240]">Total · {raffleTickets} cotas</span>
+                    <span className="shrink-0 text-right">
+                      <span className="block font-extrabold text-[#0e2240]">{formatCurrency(raffleMoney)}</span>
+                      <span className={raffleProfit < 0 ? 'text-xs font-bold text-[#a12424]' : 'text-xs font-bold text-[#0a6b34]'}>
+                        lucro {formatCurrency(raffleProfit)}
                       </span>
-                      <span className="min-w-0 flex-1 font-extrabold text-[#0e2240]">{p.name}</span>
-                      <span className="shrink-0 font-extrabold text-[#0e2240]">{formatQuantity(p.quantity)}</span>
-                    </li>
-                  ))}
-                </ol>
+                    </span>
+                  </div>
+                </Card>
               )}
-            </Card>
+            </div>
           </div>
         </>
       )}

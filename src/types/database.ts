@@ -1,4 +1,4 @@
-// Tipos que espelham o schema em supabase/migrations/ (0001_init.sql e 0004_rifas.sql)
+// Tipos que espelham o schema em supabase/migrations/ (0001_init.sql, 0004_rifas.sql e 0006_rifas_cotas.sql)
 // Escrito à mão (simples o bastante para não depender de codegen).
 
 export type Role = 'dono' | 'caixa' | 'estoquista'
@@ -119,6 +119,19 @@ export interface Raffle {
   status: RaffleStatus
   amount_received: number | null
   closed_at: string | null
+  // valor e total de cotas: nulos em rifas antigas ou ainda sem preço (0006_rifas_cotas.sql)
+  ticket_price: number | null
+  total_tickets: number | null
+  draw_date: string | null
+  created_by: string | null
+  created_at: string
+}
+
+export interface RaffleTicketSale {
+  id: string
+  raffle_id: string
+  sale_date: string // yyyy-MM-dd, o dia em que as cotas foram vendidas
+  quantity: number
   created_by: string | null
   created_at: string
 }

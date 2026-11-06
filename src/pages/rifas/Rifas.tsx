@@ -1,18 +1,27 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Download, Plus, Trash2 } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ChevronRight, Download, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
 import { downloadCsv } from '../../lib/csv'
 import { failureMessage } from '../../lib/errors'
 import { formatQuantity, isWholeUnit, parseDecimal, roundMoney, roundQuantity, wholeUnitMessage } from '../../lib/number'
-import type { Product, Raffle, RaffleItem, RaffleStatus } from '../../types/database'
+import {
+  collected,
+  estimatedProfit,
+  finalResult,
+  hasTickets,
+  prizeCost,
+  raffleValue,
+  soldTickets,
+} from '../../lib/raffles'
+import type { Product, RaffleStatus } from '../../types/database'
 import {
   Badge,
   Button,
   Card,
   ChoiceButton,
-  ConfirmDialog,
   DecimalInput,
   EmptyState,
   IconButton,
@@ -23,29 +32,30 @@ import {
   PageHeader,
   Select,
   StatTile,
-  TableScroll,
   Toast,
   formatCurrency,
 } from '../../components/ui'
-
-type RaffleWithItems = Raffle & { raffle_items: RaffleItem[] }
+import {
+  RAFFLE_SELECT,
+  STATUS_LABEL,
+  STATUS_TONE,
+  closedLabel,
+  emptyTicketDraft,
+  formatDay,
+  parseTicketDraft,
+  prizeSummary,
+  resultClass,
+  stockShortage,
+  type RaffleFull,
+  type TicketDraft,
+} from './shared'
+import { TicketFields } from './TicketFields'
 
 interface PrizeLine {
   key: number
   productId: string
   quantity: string
 }
-
-const STATUS_LABEL: Record<RaffleStatus, string> = {
-  aberta: 'Aberta',
-  encerrada: 'Encerrada',
-  cancelada: 'Cancelada',
-}
-
-// amount_received é numeric(12,2): acima disso o banco recusa com um erro sem explicação
-const MAX_AMOUNT = 9_999_999_999.99
-
-const STALE_MESSAGE = 'Esta rifa já tinha sido encerrada ou cancelada em outra tela. A lista foi atualizada.'
 
 type Filter = 'todas' | RaffleStatus
 
@@ -56,64 +66,70 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: 'cancelada', label: 'Canceladas' },
 ]
 
-const STATUS_TONE: Record<RaffleStatus, 'brand' | 'good' | 'neutral'> = {
-  aberta: 'brand',
-  encerrada: 'good',
-  cancelada: 'neutral',
-}
-
-/** Custo dos prêmios pelo preço de custo gravado quando a rifa foi criada. */
-function prizeCost(raffle: RaffleWithItems): number {
-  return roundMoney(raffle.raffle_items.reduce((sum, i) => sum + Number(i.quantity) * Number(i.cost_price_at_raffle), 0))
-}
-
-/** "Pipa Arraia tem 2 un; Carretilha tem 0 un", ou "" quando há estoque para tudo. */
-function stockShortage(byProduct: Map<string, number>, products: Product[]): string {
-  return Array.from(byProduct)
-    .map(([productId, qty]) => {
-      const product = products.find((p) => p.id === productId)
-      return product && Number(product.stock_quantity) < qty
-        ? `${product.name} tem ${formatQuantity(Number(product.stock_quantity))} ${product.unit}`
-        : null
-    })
-    .filter(Boolean)
-    .join('; ')
-}
-
-function prizeSummary(raffle: RaffleWithItems): string {
-  return raffle.raffle_items.map((i) => `${formatQuantity(Number(i.quantity))}× ${i.description}`).join(', ')
-}
-
 /**
- * Valores de uma linha da lista. Recebido e resultado só existem para rifa
- * encerrada: a cancelada não entra nos totais, então não mostra valor nenhum.
+ * Os três valores de uma linha da lista. Aberta: valor da rifa, arrecadado e
+ * lucro estimado; encerrada: valor, recebido e resultado; cancelada: nada,
+ * porque não entra nos totais.
  */
-function raffleFigures(raffle: RaffleWithItems) {
-  const cost = prizeCost(raffle)
-  const received = raffle.status === 'encerrada' && raffle.amount_received !== null ? Number(raffle.amount_received) : null
-  return { cost, received, result: received === null ? null : roundMoney(received - cost) }
+function rowFigures(raffle: RaffleFull) {
+  if (raffle.status === 'cancelada') return null
+  const value = raffleValue(raffle)
+  if (raffle.status === 'encerrada') {
+    return [
+      { label: 'Valor da rifa', value: value === null ? '—' : formatCurrency(value) },
+      { label: 'Recebido', value: formatCurrency(Number(raffle.amount_received ?? 0)) },
+      { label: 'Resultado', value: formatCurrency(finalResult(raffle) ?? 0), result: finalResult(raffle) ?? 0 },
+    ]
+  }
+  const profit = estimatedProfit(raffle)
+  return [
+    { label: 'Valor da rifa', value: value === null ? '—' : formatCurrency(value) },
+    { label: 'Arrecadado', value: hasTickets(raffle) ? formatCurrency(collected(raffle)) : '—' },
+    { label: 'Lucro estimado', value: profit === null ? '—' : formatCurrency(profit), result: profit ?? undefined },
+  ]
 }
 
-/** "Encerrada em 06/11" / "Cancelada em 06/11", para rifa que saiu de aberta. */
-function closedLabel(raffle: RaffleWithItems): string | null {
-  if (raffle.status === 'aberta' || !raffle.closed_at) return null
-  return `${STATUS_LABEL[raffle.status]} em ${format(new Date(raffle.closed_at), 'dd/MM/yyyy')}`
+/** "3 prêmios · sorteio em 15/11/2026 · R$ 5,00 a cota" */
+function rowMeta(raffle: RaffleFull): string {
+  const parts = [`${raffle.raffle_items.length} ${raffle.raffle_items.length === 1 ? 'prêmio' : 'prêmios'}`]
+  const closed = closedLabel(raffle)
+  if (closed) parts.push(closed.toLowerCase())
+  else if (raffle.draw_date) parts.push(`sorteio em ${formatDay(raffle.draw_date)}`)
+  if (raffle.ticket_price !== null) parts.push(`${formatCurrency(Number(raffle.ticket_price))} a cota`)
+  return parts.join(' · ')
 }
 
-function resultClass(result: number) {
-  return result < 0 ? 'font-bold text-[#a12424]' : 'font-bold text-[#0a6b34]'
+function TicketProgress({ raffle }: { raffle: RaffleFull }) {
+  if (raffle.status === 'cancelada') return <span className="text-sm text-[#52607a]">Prêmios devolvidos ao estoque</span>
+  if (!hasTickets(raffle)) return <span className="text-sm font-semibold text-[#52607a]">Sem cotas definidas</span>
+  const sold = soldTickets(raffle)
+  const total = Number(raffle.total_tickets)
+  const pct = Math.round((sold / total) * 100)
+  return (
+    <span className="flex flex-col gap-1.5">
+      <span className="text-sm font-bold text-[#0e2240]">
+        {sold} de {total} · {pct}%
+      </span>
+      <span className="h-2 overflow-hidden rounded-full bg-[#d5e3f0]">
+        <span
+          className={raffle.status === 'encerrada' ? 'block h-full bg-[#0a6b34]' : 'block h-full bg-[#d6247a]'}
+          style={{ width: `${Math.min(pct, 100)}%` }}
+        />
+      </span>
+    </span>
+  )
 }
 
 /**
- * Rifas com produtos do estoque. A venda dos números e o sorteio ficam no
- * outro sistema de rifa; aqui só entram os prêmios (que saem do estoque ao
- * criar a rifa e voltam se ela for cancelada) e o valor recebido no fim.
- * O dinheiro da rifa não passa pelo caixa. Ver supabase/migrations/0004_rifas.sql.
+ * Rifas com produtos do estoque. O sorteio fica no outro sistema de rifa; aqui
+ * ficam os prêmios (que saem do estoque ao criar a rifa), o valor e o total de
+ * cotas, as cotas vendidas por dia e o resultado. Cada rifa abre em
+ * /rifas/:id (RifaDetalhe). Ver as migrações 0004 e 0006.
  */
 export function Rifas() {
   const { profile } = useAuth()
   const fieldId = useId()
-  const [raffles, setRaffles] = useState<RaffleWithItems[]>([])
+  const [raffles, setRaffles] = useState<RaffleFull[]>([])
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [listError, setListError] = useState<string | null>(null)
@@ -121,31 +137,27 @@ export function Rifas() {
   const [createOpen, setCreateOpen] = useState(false)
   const [name, setName] = useState('')
   const [notes, setNotes] = useState('')
+  const [drawDate, setDrawDate] = useState('')
+  const [tickets, setTickets] = useState<TicketDraft>(emptyTicketDraft())
   const [lines, setLines] = useState<PrizeLine[]>([])
   const [createError, setCreateError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const nextKey = useRef(0)
 
-  const [toClose, setToClose] = useState<RaffleWithItems | null>(null)
-  const [amount, setAmount] = useState('')
-  const [closeError, setCloseError] = useState<string | null>(null)
-  const [closing, setClosing] = useState(false)
-
-  const [toCancel, setToCancel] = useState<RaffleWithItems | null>(null)
   const [filter, setFilter] = useState<Filter>('todas')
   const [toast, setToast] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
     const [{ data: rf, error: rfError }, { data: prod }] = await Promise.all([
-      supabase.from('raffles').select('*, raffle_items(*)').order('created_at', { ascending: false }),
+      supabase.from('raffles').select(RAFFLE_SELECT).order('created_at', { ascending: false }),
       supabase.from('products').select('*').eq('active', true).order('name'),
     ])
     if (rfError) {
       console.error('raffles select', rfError)
-      setListError('Não foi possível carregar as rifas.')
+      setListError(failureMessage(rfError, 'Não foi possível carregar as rifas.'))
     }
-    setRaffles((rf as unknown as RaffleWithItems[]) ?? [])
+    setRaffles((rf as unknown as RaffleFull[]) ?? [])
     setProducts((prod as Product[]) ?? [])
     setLoading(false)
   }
@@ -162,6 +174,8 @@ export function Rifas() {
   function openCreate() {
     setName('')
     setNotes('')
+    setDrawDate('')
+    setTickets(emptyTicketDraft())
     setLines([newLine()])
     setCreateError(null)
     setCreateOpen(true)
@@ -170,6 +184,15 @@ export function Rifas() {
   function updateLine(key: number, patch: Partial<PrizeLine>) {
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   }
+
+  // custo dos prêmios escolhidos até agora, para o cálculo ao vivo das cotas
+  const draftPrizeCost = roundMoney(
+    lines.reduce((sum, l) => {
+      const product = products.find((p) => p.id === l.productId)
+      const qty = parseDecimal(l.quantity)
+      return product && !Number.isNaN(qty) && qty > 0 ? sum + qty * Number(product.cost_price) : sum
+    }, 0),
+  )
 
   async function handleCreate() {
     if (!name.trim()) {
@@ -196,6 +219,11 @@ export function Rifas() {
       }
       byProduct.set(l.productId, roundQuantity((byProduct.get(l.productId) ?? 0) + qty))
     }
+    const parsedTickets = parseTicketDraft(tickets)
+    if ('error' in parsedTickets) {
+      setCreateError(parsedTickets.error)
+      return
+    }
     // o check do banco recusaria a rifa inteira com um erro sem explicação
     const shortage = stockShortage(byProduct, products)
     if (shortage) {
@@ -207,7 +235,14 @@ export function Rifas() {
     setCreateError(null)
     const { data: raffle, error: raffleError } = await supabase
       .from('raffles')
-      .insert({ name: name.trim(), notes: notes.trim() || null, created_by: profile?.id ?? null })
+      .insert({
+        name: name.trim(),
+        notes: notes.trim() || null,
+        draw_date: drawDate || null,
+        ticket_price: parsedTickets.ticket_price,
+        total_tickets: parsedTickets.total_tickets,
+        created_by: profile?.id ?? null,
+      })
       .select()
       .single()
 
@@ -257,90 +292,54 @@ export function Rifas() {
     load()
   }
 
-  function openClose(raffle: RaffleWithItems) {
-    setToClose(raffle)
-    setAmount('')
-    setCloseError(null)
-  }
-
-  async function handleClose() {
-    if (!toClose) return
-    const received = parseDecimal(amount)
-    if (Number.isNaN(received) || received < 0) {
-      setCloseError('Informe o valor recebido com a rifa (pode ser 0).')
-      return
-    }
-    if (received > MAX_AMOUNT) {
-      setCloseError(`Valor alto demais. O máximo é ${formatCurrency(MAX_AMOUNT)}.`)
-      return
-    }
-    setClosing(true)
-    setListError(null)
-    // só muda rifa que ainda está aberta: outra aba pode ter encerrado ou
-    // cancelado esta rifa depois que a lista carregou
-    const { data, error } = await supabase
-      .from('raffles')
-      .update({ status: 'encerrada', amount_received: roundMoney(received), closed_at: new Date().toISOString() })
-      .eq('id', toClose.id)
-      .eq('status', 'aberta')
-      .select('id')
-    setClosing(false)
-    if (error) {
-      console.error('raffles close', error)
-      setCloseError(failureMessage(error, 'Não foi possível encerrar a rifa.'))
-      return
-    }
-    setToClose(null)
-    if (!data || data.length === 0) setListError(STALE_MESSAGE)
-    else setToast(`Rifa "${toClose.name}" encerrada com ${formatCurrency(roundMoney(received))}.`)
-    load()
-  }
-
-  async function handleCancel() {
-    if (!toCancel) return
-    setListError(null)
-    const { data, error } = await supabase
-      .from('raffles')
-      .update({ status: 'cancelada', closed_at: new Date().toISOString() })
-      .eq('id', toCancel.id)
-      .eq('status', 'aberta')
-      .select('id')
-    const cancelled = toCancel
-    setToCancel(null)
-    if (error) {
-      console.error('raffles cancel', error)
-      setListError(failureMessage(error, 'Não foi possível cancelar a rifa.'))
-      return
-    }
-    if (!data || data.length === 0) setListError(STALE_MESSAGE)
-    else setToast(`Rifa "${cancelled.name}" cancelada. Os prêmios voltaram ao estoque.`)
-    load()
-  }
-
   const open = raffles.filter((r) => r.status === 'aberta')
   const closed = raffles.filter((r) => r.status === 'encerrada')
   const reservedCost = roundMoney(open.reduce((sum, r) => sum + prizeCost(r), 0))
+  const openCollected = roundMoney(open.reduce((sum, r) => sum + collected(r), 0))
+  const openSold = open.reduce((sum, r) => sum + soldTickets(r), 0)
+  const openEstimated = roundMoney(open.reduce((sum, r) => sum + (estimatedProfit(r) ?? 0), 0))
   const totalReceived = roundMoney(closed.reduce((sum, r) => sum + Number(r.amount_received ?? 0), 0))
   const closedCost = roundMoney(closed.reduce((sum, r) => sum + prizeCost(r), 0))
   const result = roundMoney(totalReceived - closedCost)
 
-  const closePreview = toClose ? parseDecimal(amount) : NaN
   const visible = filter === 'todas' ? raffles : raffles.filter((r) => r.status === filter)
 
   function exportCsv() {
     downloadCsv(`rifas-${format(new Date(), 'yyyy-MM-dd')}.csv`, [
-      ['Criada em', 'Rifa', 'Observação', 'Prêmios', 'Custo', 'Recebido', 'Resultado', 'Status', 'Encerrada/cancelada em'],
+      [
+        'Criada em',
+        'Rifa',
+        'Observação',
+        'Prêmios',
+        'Valor da cota',
+        'Total de cotas',
+        'Cotas vendidas',
+        'Valor da rifa',
+        'Arrecadado',
+        'Custo',
+        'Recebido',
+        'Resultado',
+        'Status',
+        'Sorteio',
+        'Encerrada/cancelada em',
+      ],
       ...visible.map((r) => {
-        const { cost, received, result } = raffleFigures(r)
+        const cancelled = r.status === 'cancelada'
         return [
           format(new Date(r.created_at), 'dd/MM/yyyy'),
           r.name,
           r.notes ?? '',
           prizeSummary(r),
-          cost,
-          received ?? '',
-          result ?? '',
+          r.ticket_price === null ? '' : Number(r.ticket_price),
+          r.total_tickets ?? '',
+          hasTickets(r) ? soldTickets(r) : '',
+          raffleValue(r) ?? '',
+          hasTickets(r) && !cancelled ? collected(r) : '',
+          cancelled ? '' : prizeCost(r),
+          r.status === 'encerrada' ? Number(r.amount_received ?? 0) : '',
+          finalResult(r) ?? '',
           STATUS_LABEL[r.status],
+          r.draw_date ? formatDay(r.draw_date) : '',
           r.closed_at ? format(new Date(r.closed_at), 'dd/MM/yyyy') : '',
         ]
       }),
@@ -351,22 +350,23 @@ export function Rifas() {
     <div>
       <PageHeader
         title="Rifas"
-        subtitle="Prêmios reservados do estoque e valor recebido. Os números e o sorteio ficam no sistema de rifa."
+        subtitle="Prêmios, cotas vendidas e lucro de cada rifa. Toque numa rifa para ver os prêmios e as cotas por dia."
       />
 
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Rifas abertas" value={String(open.length)} hint={`${formatCurrency(reservedCost)} em prêmios reservados`} />
+        <StatTile label="Arrecadado nas abertas" value={formatCurrency(openCollected)} hint={`${openSold} cotas vendidas`} />
         <StatTile
-          label="Rifas abertas"
-          value={String(open.length)}
-          hint={`${formatCurrency(reservedCost)} em prêmios reservados`}
+          label="Lucro estimado das abertas"
+          value={formatCurrency(openEstimated)}
+          tone={openEstimated < 0 ? 'critical' : 'good'}
+          hint="se vender todas as cotas"
         />
-        <StatTile label="Recebido" value={formatCurrency(totalReceived)} hint="Rifas encerradas" />
-        <StatTile label="Custo dos prêmios" value={formatCurrency(closedCost)} hint="Rifas encerradas" />
         <StatTile
-          label="Resultado"
+          label="Resultado das encerradas"
           value={formatCurrency(result)}
           tone={result > 0 ? 'good' : result < 0 ? 'critical' : 'neutral'}
-          hint="Recebido menos o custo"
+          hint={`recebido ${formatCurrency(totalReceived)} − custo ${formatCurrency(closedCost)}`}
         />
       </div>
 
@@ -404,125 +404,47 @@ export function Rifas() {
         ) : visible.length === 0 ? (
           <EmptyState message="Nenhuma rifa com esse status." />
         ) : (
-          <>
-            {/* celular: cartões empilhados, com as ações à vista (a tabela não cabe em 390px) */}
-            <ul className="space-y-3 lg:hidden">
-              {visible.map((r) => {
-                const { cost, received, result } = raffleFigures(r)
-                const closedText = closedLabel(r)
-                return (
-                  <li key={r.id} className="rounded-2xl border-2 border-[#d5e3f0] p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <p className="font-extrabold break-words text-[#0e2240]">{r.name}</p>
-                        <p className="text-xs font-semibold text-[#52607a]">
-                          Criada em {format(new Date(r.created_at), 'dd/MM/yyyy')}
-                          {closedText && ` · ${closedText.toLowerCase()}`}
-                        </p>
-                        {r.notes && <p className="mt-0.5 text-xs text-[#52607a]">{r.notes}</p>}
-                      </div>
-                      <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                    </div>
-                    <p className="mt-2 text-sm text-[#3b4a66]">{prizeSummary(r) || '—'}</p>
-                    {r.status === 'cancelada' ? (
-                      <p className="mt-2 text-xs font-semibold text-[#52607a]">Prêmios devolvidos ao estoque.</p>
+          <ul className="space-y-3">
+            {visible.map((r) => {
+              const figures = rowFigures(r)
+              const cancelled = r.status === 'cancelada'
+              return (
+                <li key={r.id}>
+                  {/* a linha inteira abre a rifa: celular em cartão, computador em colunas */}
+                  <Link
+                    to={`/rifas/${r.id}`}
+                    className="grid gap-3 rounded-2xl border-2 border-[#d5e3f0] p-4 transition-colors hover:border-[#d6247a] hover:bg-[#fdf3f8] focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-[#d6247a] lg:grid-cols-[minmax(0,2.2fr)_minmax(0,1.4fr)_repeat(3,minmax(0,1fr))_24px] lg:items-center"
+                  >
+                    <span className="flex min-w-0 flex-col gap-1">
+                      <span className="flex items-start justify-between gap-2 lg:justify-start">
+                        <strong className={cancelled ? 'break-words text-[#3b4a66]' : 'break-words text-[#0e2240]'}>{r.name}</strong>
+                        <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                      </span>
+                      <span className="text-xs font-semibold text-[#52607a]">{rowMeta(r)}</span>
+                    </span>
+                    <TicketProgress raffle={r} />
+                    {figures ? (
+                      figures.map((f) => (
+                        <span key={f.label} className="flex justify-between gap-2 text-sm lg:block lg:text-right">
+                          <span className="text-xs font-semibold text-[#52607a] lg:block">{f.label}</span>
+                          <span
+                            className={
+                              f.result === undefined || f.value === '—' ? 'font-bold text-[#0e2240]' : resultClass(f.result)
+                            }
+                          >
+                            {f.value}
+                          </span>
+                        </span>
+                      ))
                     ) : (
-                      <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-[#f4f8fc] p-2 text-sm">
-                        <div>
-                          <dt className="text-xs font-semibold text-[#52607a]">Custo</dt>
-                          <dd className="font-bold text-[#0e2240]">{formatCurrency(cost)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-semibold text-[#52607a]">Recebido</dt>
-                          <dd className="font-bold text-[#0e2240]">{received === null ? '—' : formatCurrency(received)}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs font-semibold text-[#52607a]">Resultado</dt>
-                          <dd className={result === null ? 'font-bold text-[#0e2240]' : resultClass(result)}>
-                            {result === null ? '—' : formatCurrency(result)}
-                          </dd>
-                        </div>
-                      </dl>
+                      <span className="hidden lg:col-span-3 lg:block" />
                     )}
-                    {r.status === 'aberta' && (
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <Button size="sm" variant="secondary" onClick={() => openClose(r)}>
-                          Encerrar
-                        </Button>
-                        <Button size="sm" variant="danger-ghost" onClick={() => setToCancel(r)}>
-                          Cancelar
-                        </Button>
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-
-            <TableScroll className="hidden lg:block">
-              <table className="w-full min-w-[880px] text-left text-sm">
-                <thead>
-                  <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
-                    <th className="py-2 pr-3">Criada em</th>
-                    <th className="py-2 pr-3">Rifa</th>
-                    <th className="py-2 pr-3">Prêmios</th>
-                    <th className="py-2 pr-3 text-right">Custo</th>
-                    <th className="py-2 pr-3 text-right">Recebido</th>
-                    <th className="py-2 pr-3 text-right">Resultado</th>
-                    <th className="py-2 pr-3">Status</th>
-                    <th className="py-2" />
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-neutral-100">
-                  {visible.map((r) => {
-                    const { cost, received, result } = raffleFigures(r)
-                    const closedText = closedLabel(r)
-                    return (
-                      <tr key={r.id}>
-                        <td className="py-2.5 pr-3 whitespace-nowrap text-neutral-500">
-                          {format(new Date(r.created_at), 'dd/MM/yyyy')}
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <p className="font-medium text-neutral-900">{r.name}</p>
-                          {r.notes && <p className="text-xs text-neutral-500">{r.notes}</p>}
-                        </td>
-                        <td className="py-2.5 pr-3 text-neutral-600">{prizeSummary(r) || '—'}</td>
-                        <td className="py-2.5 pr-3 text-right whitespace-nowrap">
-                          {r.status === 'cancelada' ? '—' : formatCurrency(cost)}
-                        </td>
-                        <td className="py-2.5 pr-3 text-right whitespace-nowrap">
-                          {received === null ? '—' : formatCurrency(received)}
-                        </td>
-                        <td className={`py-2.5 pr-3 text-right whitespace-nowrap ${result === null ? '' : resultClass(result)}`}>
-                          {result === null ? '—' : formatCurrency(result)}
-                        </td>
-                        <td className="py-2.5 pr-3">
-                          <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                          {closedText && (
-                            <p className="mt-1 text-xs whitespace-nowrap text-neutral-500">
-                              em {format(new Date(r.closed_at as string), 'dd/MM/yyyy')}
-                            </p>
-                          )}
-                        </td>
-                        <td className="py-2.5 text-right whitespace-nowrap">
-                          {r.status === 'aberta' && (
-                            <div className="flex justify-end gap-1">
-                              <Button size="sm" variant="secondary" onClick={() => openClose(r)}>
-                                Encerrar
-                              </Button>
-                              <Button size="sm" variant="danger-ghost" onClick={() => setToCancel(r)}>
-                                Cancelar
-                              </Button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </TableScroll>
-          </>
+                    <ChevronRight size={20} aria-hidden="true" className="hidden text-[#52607a] lg:block" />
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
         )}
       </Card>
 
@@ -538,14 +460,20 @@ export function Rifas() {
               placeholder="Ex.: Rifa do Dia das Crianças"
             />
           </div>
-          <div>
-            <Label htmlFor={`${fieldId}-notes`}>Observação (opcional)</Label>
-            <Input
-              id={`${fieldId}-notes`}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Ex.: link ou código no sistema de rifa"
-            />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <Label htmlFor={`${fieldId}-notes`}>Observação (opcional)</Label>
+              <Input
+                id={`${fieldId}-notes`}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Ex.: link ou código no sistema de rifa"
+              />
+            </div>
+            <div>
+              <Label htmlFor={`${fieldId}-draw`}>Data do sorteio (opcional)</Label>
+              <Input id={`${fieldId}-draw`} type="date" value={drawDate} onChange={(e) => setDrawDate(e.target.value)} />
+            </div>
           </div>
 
           <div>
@@ -591,14 +519,17 @@ export function Rifas() {
                 </div>
               ))}
             </div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="mt-2"
-              onClick={() => setLines((prev) => [...prev, newLine()])}
-            >
+            <Button size="sm" variant="ghost" className="mt-2" onClick={() => setLines((prev) => [...prev, newLine()])}>
               <Plus size={16} /> Adicionar prêmio
             </Button>
+          </div>
+
+          <div className="border-t-2 border-[#eef2f7] pt-4">
+            <p className="mb-3 text-xs font-semibold text-[#52607a]">
+              Cotas (opcional agora): sem elas a rifa é criada, mas as vendas por dia só podem ser registradas depois de
+              definir o valor e o total de cotas em Editar rifa.
+            </p>
+            <TicketFields idPrefix={`${fieldId}-nova`} draft={tickets} onChange={setTickets} prizeCostValue={draftPrizeCost} />
           </div>
 
           {createError && <p className="text-sm text-[#d03b3b]">{createError}</p>}
@@ -607,54 +538,6 @@ export function Rifas() {
           </Button>
         </div>
       </Modal>
-
-      <Modal open={toClose !== null} onClose={closing ? () => {} : () => setToClose(null)} title="Encerrar rifa">
-        {toClose && (
-          <div className="space-y-4">
-            <div className="text-sm font-semibold text-[#52607a]">
-              <p className="font-extrabold text-[#0e2240]">{toClose.name}</p>
-              <p>{prizeSummary(toClose)}</p>
-              <p className="mt-1">Custo dos prêmios: {formatCurrency(prizeCost(toClose))}</p>
-            </div>
-            <div>
-              <Label htmlFor={`${fieldId}-amount`}>Valor recebido com a rifa (R$)</Label>
-              <DecimalInput
-                id={`${fieldId}-amount`}
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                placeholder="0,00"
-              />
-            </div>
-            {!Number.isNaN(closePreview) && closePreview >= 0 && (
-              <p className="text-sm font-bold text-[#0e2240]">
-                Resultado: {formatCurrency(roundMoney(closePreview - prizeCost(toClose)))}
-              </p>
-            )}
-            <p className="text-xs font-semibold text-[#52607a]">
-              Os prêmios continuam fora do estoque (foram para o ganhador). Esse valor não entra no caixa.
-            </p>
-            {closeError && <p className="text-sm text-[#d03b3b]">{closeError}</p>}
-            <Button className="w-full" onClick={handleClose} disabled={closing}>
-              {closing ? 'Encerrando…' : 'Encerrar rifa'}
-            </Button>
-          </div>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        open={toCancel !== null}
-        title="Cancelar rifa"
-        message={
-          <>
-            Cancelar <strong>{toCancel?.name}</strong>? Os prêmios ({toCancel && prizeSummary(toCancel)}) voltam para o
-            estoque.
-          </>
-        }
-        confirmLabel="Cancelar rifa"
-        cancelLabel="Voltar"
-        onConfirm={handleCancel}
-        onClose={() => setToCancel(null)}
-      />
 
       <Toast message={toast} onDone={() => setToast(null)} />
     </div>
