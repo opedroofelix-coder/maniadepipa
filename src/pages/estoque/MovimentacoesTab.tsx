@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react'
 import { Plus } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { useAuth } from '../../contexts/AuthContext'
 import { formatQuantity, isWholeUnit, parseDecimal, wholeUnitMessage } from '../../lib/number'
 import type { Product, StockMovement, StockMovementType } from '../../types/database'
@@ -106,7 +107,7 @@ export function MovimentacoesTab() {
     })
     setSaving(false)
     if (saveError) {
-      setError('Não foi possível registrar a movimentação.')
+      setError(failureMessage(saveError, 'Não foi possível registrar a movimentação.'))
       return
     }
     setOpen(false)

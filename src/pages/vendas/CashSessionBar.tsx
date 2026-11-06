@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Lock, Unlock, Wallet } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { useAuth } from '../../contexts/AuthContext'
 import { parseDecimal, roundMoney, toDecimal } from '../../lib/number'
 import type { CashSession, CashMovementType } from '../../types/database'
@@ -10,6 +11,26 @@ const MOVE_TYPES: { id: CashMovementType; label: string }[] = [
   { id: 'sangria', label: 'Sangria (retirada)' },
   { id: 'suprimento', label: 'Suprimento (reforço)' },
 ]
+
+/** Dinheiro que deveria estar na gaveta: abertura + vendas em dinheiro da sessão + suprimentos − sangrias. */
+async function cashInDrawer(current: CashSession): Promise<number> {
+  const [{ data: sales }, { data: movements }] = await Promise.all([
+    supabase.from('sales').select('id').eq('session_id', current.id).eq('status', 'completed'),
+    supabase.from('cash_movements').select('type, amount').eq('session_id', current.id),
+  ])
+  const saleIds = (sales ?? []).map((s) => s.id as string)
+  const { data: payments } =
+    saleIds.length > 0
+      ? await supabase.from('sale_payments').select('amount').eq('method', 'dinheiro').in('sale_id', saleIds)
+      : { data: [] as { amount: number }[] }
+
+  const cash = (payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0)
+  const movementsTotal = (movements ?? []).reduce(
+    (sum, m) => sum + (m.type === 'suprimento' ? Number(m.amount) : -Number(m.amount)),
+    0,
+  )
+  return roundMoney(Number(current.opening_amount) + cash + movementsTotal)
+}
 
 export function CashSessionBar({ session, onChanged }: { session: CashSession | null; onChanged: () => void }) {
   const { profile } = useAuth()
@@ -28,36 +49,33 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
   const [moveError, setMoveError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [expected, setExpected] = useState<number | null>(null)
+  const [drawer, setDrawer] = useState<number | null>(null)
 
-  // valor esperado na gaveta ao fechar: abertura + vendas em dinheiro da sessão
-  // + suprimentos - sangrias. Preenche o expected_amount, que nunca era gravado.
+  // valor esperado na gaveta ao fechar. Preenche o expected_amount, que nunca era gravado.
   useEffect(() => {
     if (!closeModal || !session) return
     let cancelled = false
-    async function loadExpected(current: CashSession) {
-      const [{ data: sales }, { data: movements }] = await Promise.all([
-        supabase.from('sales').select('id').eq('session_id', current.id).eq('status', 'completed'),
-        supabase.from('cash_movements').select('type, amount').eq('session_id', current.id),
-      ])
-      const saleIds = (sales ?? []).map((s) => s.id as string)
-      const { data: payments } =
-        saleIds.length > 0
-          ? await supabase.from('sale_payments').select('amount').eq('method', 'dinheiro').in('sale_id', saleIds)
-          : { data: [] as { amount: number }[] }
-
-      const cash = (payments ?? []).reduce((sum, p) => sum + Number(p.amount), 0)
-      const movementsTotal = (movements ?? []).reduce(
-        (sum, m) => sum + (m.type === 'suprimento' ? Number(m.amount) : -Number(m.amount)),
-        0,
-      )
-      if (!cancelled) setExpected(roundMoney(Number(current.opening_amount) + cash + movementsTotal))
-    }
     setExpected(null)
-    loadExpected(session)
+    cashInDrawer(session).then((value) => {
+      if (!cancelled) setExpected(value)
+    })
     return () => {
       cancelled = true
     }
   }, [closeModal, session])
+
+  // o mesmo cálculo na sangria, para avisar quando ela passa do que há na gaveta
+  useEffect(() => {
+    if (!moveModal || !session) return
+    let cancelled = false
+    setDrawer(null)
+    cashInDrawer(session).then((value) => {
+      if (!cancelled) setDrawer(value)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [moveModal, session])
 
   function startOpen() {
     setOpeningAmount('0')
@@ -104,7 +122,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     setSaving(false)
     if (error) {
       console.error('cash_sessions insert', error)
-      setOpenError('Não foi possível abrir o caixa.')
+      setOpenError(failureMessage(error, 'Não foi possível abrir o caixa.'))
       return
     }
     setOpenModal(false)
@@ -134,7 +152,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     setSaving(false)
     if (error) {
       console.error('cash_sessions update', error)
-      setCloseError('Não foi possível fechar o caixa.')
+      setCloseError(failureMessage(error, 'Não foi possível fechar o caixa.'))
       return
     }
     setCloseModal(false)
@@ -163,7 +181,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     setSaving(false)
     if (error) {
       console.error('cash_movements insert', error)
-      setMoveError('Não foi possível registrar a movimentação.')
+      setMoveError(failureMessage(error, 'Não foi possível registrar a movimentação.'))
       return
     }
     setMoveModal(false)
@@ -206,6 +224,7 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
     )
   }
 
+  const sangriaOverDrawer = moveType === 'sangria' && drawer !== null && roundMoney(toDecimal(moveAmount)) > drawer
   const counted = roundMoney(toDecimal(closingAmount))
   const difference = expected === null ? null : roundMoney(counted - expected)
 
@@ -299,9 +318,19 @@ export function CashSessionBar({ session, onChanged }: { session: CashSession | 
             <Label htmlFor={`${fieldId}-move-reason`}>Motivo</Label>
             <Input id={`${fieldId}-move-reason`} value={moveReason} onChange={(e) => setMoveReason(e.target.value)} />
           </div>
+          {moveType === 'sangria' &&
+            drawer !== null &&
+            (sangriaOverDrawer ? (
+              <p className="rounded-2xl bg-[#fff1c7] px-4 py-3 text-sm font-bold text-[#7a5200]">
+                A sangria passa do dinheiro que deveria estar na gaveta ({formatCurrency(drawer)}). Confira a gaveta
+                antes de registrar.
+              </p>
+            ) : (
+              <p className="text-xs font-semibold text-[#52607a]">Na gaveta agora: {formatCurrency(drawer)}.</p>
+            ))}
           {moveError && <p className="text-sm font-bold text-[#a12424]">{moveError}</p>}
           <Button className="w-full" onClick={handleMovement} disabled={saving}>
-            {saving ? 'Registrando…' : 'Registrar'}
+            {saving ? 'Registrando…' : sangriaOverDrawer ? 'Registrar mesmo assim' : 'Registrar'}
           </Button>
         </div>
       </Modal>

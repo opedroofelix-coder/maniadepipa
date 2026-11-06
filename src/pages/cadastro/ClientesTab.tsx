@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import type { Customer } from '../../types/database'
 import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Loader, Modal } from '../../components/ui'
 
@@ -54,7 +55,7 @@ export function ClientesTab() {
     const { error: deleteError } = await supabase.from('customers').delete().eq('id', toDelete.id)
     setToDelete(null)
     if (deleteError) {
-      setListError('Não foi possível excluir o cliente.')
+      setListError(failureMessage(deleteError, 'Não foi possível excluir o cliente.'))
       return
     }
     load()
@@ -91,7 +92,7 @@ export function ClientesTab() {
     const { error: saveError } = await query
     setSaving(false)
     if (saveError) {
-      setError('Não foi possível salvar o cliente.')
+      setError(failureMessage(saveError, 'Não foi possível salvar o cliente.'))
       return
     }
     setOpen(false)

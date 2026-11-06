@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { format, startOfMonth } from 'date-fns'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { localDayRangeToUtcIso } from '../../lib/date'
 import { formatQuantity } from '../../lib/number'
 import type { Sale, SaleItem, SalePayment } from '../../types/database'
@@ -18,7 +19,11 @@ import {
   formatCurrency,
 } from '../../components/ui'
 
-type SaleWithRelations = Sale & { profiles: { full_name: string } | null; customers: { name: string } | null }
+type SaleWithRelations = Sale & {
+  profiles: { full_name: string } | null
+  customers: { name: string } | null
+  cash_sessions: { status: 'open' | 'closed' } | null
+}
 
 const PAGE_SIZE = 50
 
@@ -44,7 +49,7 @@ export function HistoricoTab() {
     const { startIso, endIso } = localDayRangeToUtcIso(start, end)
     return supabase
       .from('sales')
-      .select('*, profiles(full_name), customers(name)')
+      .select('*, profiles(full_name), customers(name), cash_sessions(status)')
       .gte('created_at', startIso)
       .lte('created_at', endIso)
       .order('created_at', { ascending: false })
@@ -100,7 +105,7 @@ export function HistoricoTab() {
     const { error: cancelError } = await supabase.from('sales').update({ status: 'cancelled' }).eq('id', toCancel.id)
     setToCancel(null)
     if (cancelError) {
-      setError('Não foi possível cancelar a venda.')
+      setError(failureMessage(cancelError, 'Não foi possível cancelar a venda.'))
       return
     }
     load()
@@ -307,9 +312,23 @@ export function HistoricoTab() {
         open={toCancel !== null}
         title="Cancelar venda"
         message={
-          toCancel
-            ? `Cancelar a venda de ${formatCurrency(toCancel.total)} de ${format(new Date(toCancel.created_at), 'dd/MM/yyyy HH:mm')}? O estoque dos itens será devolvido.`
-            : ''
+          toCancel ? (
+            <>
+              <p>
+                Cancelar a venda de {formatCurrency(toCancel.total)} de{' '}
+                {format(new Date(toCancel.created_at), 'dd/MM/yyyy HH:mm')}? O estoque dos itens será devolvido.
+              </p>
+              {/* o fechamento já gravado não é recalculado: sem o aviso, a devolução em dinheiro sumia da conta */}
+              {toCancel.cash_sessions?.status === 'closed' && (
+                <p className="mt-2 rounded-2xl bg-[#fff1c7] px-4 py-3 font-bold text-[#7a5200]">
+                  O caixa desta venda já foi fechado, e o fechamento não muda. Se devolver dinheiro ao cliente, registre
+                  uma sangria no caixa aberto.
+                </p>
+              )}
+            </>
+          ) : (
+            ''
+          )
         }
         confirmLabel="Cancelar venda"
         cancelLabel="Voltar"

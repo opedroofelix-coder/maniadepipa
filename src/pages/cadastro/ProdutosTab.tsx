@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { sameName } from '../../lib/names'
 import { formatQuantity, parseDecimal, roundMoney, roundQuantity, toMoneyInput, toQuantityInput } from '../../lib/number'
 import type { Category, Product } from '../../types/database'
@@ -102,7 +103,7 @@ export function ProdutosTab() {
     // vendido ou sorteado não sai
     const isInUse = deleteError.code === '23503' || deleteError.message.includes('foreign key')
     if (!isInUse) {
-      setListError('Não foi possível excluir o produto.')
+      setListError(failureMessage(deleteError, 'Não foi possível excluir o produto.'))
       return
     }
     setToDeactivate(product)
@@ -116,7 +117,7 @@ export function ProdutosTab() {
       .eq('id', toDeactivate.id)
     setToDeactivate(null)
     if (updateError) {
-      setListError('Não foi possível inativar o produto.')
+      setListError(failureMessage(updateError, 'Não foi possível inativar o produto.'))
       return
     }
     load()
@@ -180,7 +181,7 @@ export function ProdutosTab() {
       setError(
         saveError.message.includes('duplicate')
           ? 'Já existe um produto com esse código.'
-          : 'Não foi possível salvar o produto.',
+          : failureMessage(saveError, 'Não foi possível salvar o produto.'),
       )
       return
     }

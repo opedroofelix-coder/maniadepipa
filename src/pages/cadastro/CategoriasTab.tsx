@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { sameName } from '../../lib/names'
 import type { Category } from '../../types/database'
 import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Loader, Modal } from '../../components/ui'
@@ -46,7 +47,7 @@ export function CategoriasTab() {
     const { error: saveError } = await supabase.from('categories').insert({ name: name.trim() })
     setSaving(false)
     if (saveError) {
-      setError('Não foi possível salvar. Talvez já exista uma categoria com esse nome.')
+      setError(failureMessage(saveError, 'Não foi possível salvar. Talvez já exista uma categoria com esse nome.'))
       return
     }
     setName('')
@@ -68,7 +69,7 @@ export function CategoriasTab() {
     const { error: deleteError } = await supabase.from('categories').delete().eq('id', toDelete.id)
     setToDelete(null)
     if (deleteError) {
-      setListError('Não foi possível remover a categoria.')
+      setListError(failureMessage(deleteError, 'Não foi possível remover a categoria.'))
       return
     }
     load()
