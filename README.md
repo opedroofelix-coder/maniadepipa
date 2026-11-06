@@ -38,6 +38,7 @@ supabase/
   migrations/0002_seed_categorias.sql categorias iniciais (loja de pipas)
   migrations/0003_fechamento_negativo.sql permite esperado negativo no fechamento do caixa
   migrations/0004_rifas.sql           rifas: prêmios reservados do estoque e valor recebido
+  migrations/0005_travas_rifas_caixa_perfis.sql travas de status da rifa, venda em caixa fechado e nome do vendedor
 ```
 
 ## 1. Criar o projeto no Supabase
@@ -48,7 +49,7 @@ supabase/
    arquivos de `supabase/migrations/`: primeiro `0001_init.sql` (cria todas as
    tabelas, os gatilhos de baixa/entrada de estoque e as políticas de RLS) e
    depois `0002_seed_categorias.sql` (pré-cadastra as categorias de produtos),
-   `0003_fechamento_negativo.sql` e `0004_rifas.sql`.
+   `0003_fechamento_negativo.sql`, `0004_rifas.sql` e `0005_travas_rifas_caixa_perfis.sql`.
    Alternativamente, com a [CLI do Supabase](https://supabase.com/docs/guides/local-development)
    instalada: `supabase link --project-ref SEU_REF && supabase db push`.
 3. Em **Project Settings → API**, copie a **Project URL** e a **anon public key**.
@@ -167,7 +168,9 @@ O dinheiro da rifa não passa pelo caixa e não entra nos relatórios de vendas.
 Para manter simples, a política padrão é: qualquer usuário autenticado (ou
 seja, qualquer funcionário logado) pode ler e escrever em todas as tabelas de
 negócio. O controle por papel (dono/caixa/estoquista) acontece apenas na
-interface — o menu lateral já esconde o que cada papel não deveria ver.
+interface: o menu lateral esconde o que cada papel não deveria ver, e uma
+página aberta direto pelo endereço (ex.: o caixa em `/rifas`) volta para o
+Dashboard. As regras ficam em `src/lib/access.ts`.
 
 Isso é suficiente para uma loja pequena com poucos funcionários de confiança.
 Se o negócio crescer e for necessário impedir, por exemplo, que um `caixa`

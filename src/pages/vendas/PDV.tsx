@@ -113,11 +113,14 @@ export function PDV() {
     }
     const seq = ++searchSeq.current
     const timeout = setTimeout(async () => {
+      // entre aspas, vírgula e parênteses do texto digitado não quebram o filtro
+      // (sem elas "Linha, 10" virava erro 400 e a busca voltava vazia)
+      const term = `"%${search.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}%"`
       const { data } = await supabase
         .from('products')
         .select('*')
         .eq('active', true)
-        .or(`name.ilike.%${search}%,code.ilike.%${search}%`)
+        .or(`name.ilike.${term},code.ilike.${term}`)
         .limit(8)
       if (seq !== searchSeq.current) return // chegou atrasada, descarta
       setResults((data as Product[]) ?? [])
@@ -298,6 +301,27 @@ export function PDV() {
     }
 
     setSaving(true)
+
+    // O caixa pode ter sido fechado em outra aba ou aparelho depois que esta tela
+    // carregou. Sem reconferir, a venda ficava presa a uma sessão fechada e fora
+    // de qualquer fechamento.
+    const { data: currentSession, error: sessionError } = await supabase
+      .from('cash_sessions')
+      .select('status')
+      .eq('id', session.id)
+      .maybeSingle()
+    if (sessionError) {
+      console.error('cash_sessions select', sessionError)
+      setError('Não foi possível conferir o caixa. Tente de novo.')
+      setSaving(false)
+      return
+    }
+    if (currentSession?.status !== 'open') {
+      setError('O caixa foi fechado em outra tela. Abra o caixa de novo para registrar esta venda.')
+      setSaving(false)
+      loadSession()
+      return
+    }
 
     // Conferir o estoque ANTES de gravar. Sem isso, o insert dos itens bate no
     // check (stock_quantity >= 0) e a venda fica gravada sem item nenhum.

@@ -1,7 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Pencil, Search, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
-import { formatQuantity, toDecimal, toMoneyInput, toQuantityInput } from '../../lib/number'
+import { formatQuantity, parseDecimal, roundMoney, roundQuantity, toMoneyInput, toQuantityInput } from '../../lib/number'
 import type { Category, Product } from '../../types/database'
 import {
   Badge,
@@ -125,23 +125,47 @@ export function ProdutosTab() {
       setError('Informe o nome do produto.')
       return
     }
+    // texto inválido não pode virar zero em silêncio: um preço de venda
+    // "dez reais" era gravado como R$ 0,00 e o item saía de graça no PDV
+    const costPrice = parseDecimal(form.cost_price)
+    const salePrice = parseDecimal(form.sale_price)
+    const stockQuantity = parseDecimal(form.stock_quantity)
+    const minStock = parseDecimal(form.min_stock)
+    if (Number.isNaN(costPrice) || costPrice < 0) {
+      setError('Preço de custo inválido. Use, por exemplo, 3,20.')
+      return
+    }
+    if (Number.isNaN(salePrice) || salePrice < 0) {
+      setError('Preço de venda inválido. Use, por exemplo, 8,50.')
+      return
+    }
+    if (!form.id && (Number.isNaN(stockQuantity) || stockQuantity < 0)) {
+      setError('Estoque inicial inválido. Use zero ou mais.')
+      return
+    }
+    if (Number.isNaN(minStock) || minStock < 0) {
+      setError('Estoque mínimo inválido. Use zero ou mais.')
+      return
+    }
     setSaving(true)
     const payload = {
       code: form.code.trim() || null,
       name: form.name.trim(),
       category_id: form.category_id || null,
       unit: form.unit,
-      cost_price: toDecimal(form.cost_price),
-      sale_price: toDecimal(form.sale_price),
-      stock_quantity: toDecimal(form.stock_quantity),
-      min_stock: toDecimal(form.min_stock),
+      cost_price: roundMoney(costPrice),
+      sale_price: roundMoney(salePrice),
+      min_stock: roundQuantity(minStock),
       active: form.active,
       updated_at: new Date().toISOString(),
     }
 
+    // Na edição o estoque não vai junto: o formulário guarda o número de quando a
+    // tela abriu, e regravá-lo desfazia as vendas e as reservas de rifa feitas
+    // nesse meio-tempo. Ajuste de estoque é por Estoque -> Movimentações.
     const query = form.id
       ? supabase.from('products').update(payload).eq('id', form.id)
-      : supabase.from('products').insert(payload)
+      : supabase.from('products').insert({ ...payload, stock_quantity: roundQuantity(stockQuantity) })
 
     const { error: saveError } = await query
     setSaving(false)
@@ -306,6 +330,8 @@ export function ProdutosTab() {
               id={`${fieldId}-stock`}
               value={form.stock_quantity}
               onChange={(e) => setForm({ ...form, stock_quantity: e.target.value })}
+              disabled={Boolean(form.id)}
+              className="disabled:cursor-not-allowed disabled:bg-[#eef2f7] disabled:text-[#52607a]"
             />
           </div>
           <div>
@@ -332,7 +358,7 @@ export function ProdutosTab() {
         {error && <p className="mt-3 text-sm text-[#d03b3b]">{error}</p>}
         {form.id && (
           <p className="mt-3 text-xs text-neutral-400">
-            Alterar o estoque aqui faz um ajuste direto. Para registrar entrada/saída com motivo, use a tela de Estoque.
+            Para mudar o estoque, registre uma entrada, saída ou ajuste em Estoque → Movimentações.
           </p>
         )}
         <Button className="mt-4 w-full" onClick={handleSave} disabled={saving}>

@@ -3,7 +3,7 @@ import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { LayoutDashboard, ShoppingCart, Package, ClipboardList, BarChart3, Ticket, LogOut, Menu, X } from 'lucide-react'
 import clsx from 'clsx'
 import { useAuth } from '../contexts/AuthContext'
-import { canOpen } from '../lib/access'
+import { canOpen, isForbidden } from '../lib/access'
 import { Button, Loader } from './ui'
 import { InstallAppButton } from './InstallApp'
 import logo from '../assets/logo.png'
@@ -69,6 +69,12 @@ export function Layout() {
 
   if (!profile) {
     return <Navigate to="/login" replace />
+  }
+
+  // o menu esconde o que o papel não abre, mas o endereço digitado direto
+  // (ex.: o caixa em /rifas) também precisa ser barrado
+  if (isForbidden(location.pathname, profile.role)) {
+    return <Navigate to="/" replace />
   }
 
   const items = NAV_ITEMS.filter((item) => canOpen(item.to, profile.role))
