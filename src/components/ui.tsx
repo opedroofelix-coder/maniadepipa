@@ -308,6 +308,34 @@ export function ConfirmDialog({
   )
 }
 
+/**
+ * Aviso curto de que deu certo ("Rifa criada"), no rodapé da tela. Some sozinho
+ * depois de alguns segundos; `onDone` limpa a mensagem no estado da página.
+ */
+export function Toast({ message, onDone }: { message: string | null; onDone: () => void }) {
+  // onDone costuma ser uma arrow inline: guardado num ref, o tempo não reinicia a cada render
+  const onDoneRef = useRef(onDone)
+  useEffect(() => {
+    onDoneRef.current = onDone
+  })
+
+  useEffect(() => {
+    if (!message) return
+    const timeout = setTimeout(() => onDoneRef.current(), 4000)
+    return () => clearTimeout(timeout)
+  }, [message])
+
+  return (
+    <div role="status" aria-live="polite" className="pointer-events-none fixed inset-x-4 bottom-4 z-[60] flex justify-center">
+      {message && (
+        <p className="max-w-md rounded-2xl bg-[#0e2240] px-5 py-3 text-center text-sm font-bold text-white shadow-[0_12px_30px_rgba(14,34,64,0.3)]">
+          {message}
+        </p>
+      )}
+    </div>
+  )
+}
+
 export function EmptyState({ message }: { message: string }) {
   return <div className="py-10 text-center text-sm font-semibold text-[#52607a]">{message}</div>
 }

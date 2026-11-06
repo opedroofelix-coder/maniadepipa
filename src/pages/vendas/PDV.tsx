@@ -1,6 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Minus, Plus, Search, Trash2, X } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { failureMessage } from '../../lib/errors'
 import { useAuth } from '../../contexts/AuthContext'
 import {
   formatQuantity,
@@ -322,7 +323,7 @@ export function PDV() {
       .maybeSingle()
     if (sessionError) {
       console.error('cash_sessions select', sessionError)
-      setError('Não foi possível conferir o caixa. Tente de novo.')
+      setError(failureMessage(sessionError, 'Não foi possível conferir o caixa. Tente de novo.'))
       setSaving(false)
       return
     }
@@ -343,7 +344,7 @@ export function PDV() {
         .in('id', productLines.map((l) => l.productId as string))
       if (stockError) {
         console.error('products select', stockError)
-        setError('Não foi possível conferir o estoque. Tente de novo.')
+        setError(failureMessage(stockError, 'Não foi possível conferir o estoque. Tente de novo.'))
         setSaving(false)
         return
       }
@@ -385,7 +386,7 @@ export function PDV() {
 
     if (saleError || !sale) {
       console.error('sales insert', saleError)
-      setError('Não foi possível registrar a venda.')
+      setError(failureMessage(saleError, 'Não foi possível registrar a venda.'))
       setSaving(false)
       return
     }
@@ -406,7 +407,7 @@ export function PDV() {
       // desfaz a venda para não sobrar registro órfão contando no faturamento
       // (sale_items e sale_payments saem junto por on delete cascade)
       await supabase.from('sales').delete().eq('id', sale.id)
-      setError('Não foi possível registrar os itens. A venda foi cancelada, nada foi gravado. Tente de novo.')
+      setError(failureMessage(itemsError, 'Não foi possível registrar os itens. A venda foi cancelada, nada foi gravado. Tente de novo.'))
       setSaving(false)
       return
     }
@@ -537,6 +538,7 @@ export function PDV() {
                                 id={`${fieldId}-m-qty-${l.id}`}
                                 value={l.quantity}
                                 onChange={(e) => updateLine(l.id, { quantity: e.target.value })}
+                                inputMode={l.productId !== null && isWholeUnit(l.unit) ? 'numeric' : 'decimal'}
                                 className="text-center"
                               />
                               <IconButton tone="neutral" onClick={() => stepQuantity(l.id, 1)} aria-label="Aumentar">
@@ -592,6 +594,7 @@ export function PDV() {
                                 <DecimalInput
                                   value={l.quantity}
                                   onChange={(e) => updateLine(l.id, { quantity: e.target.value })}
+                                  inputMode={l.productId !== null && isWholeUnit(l.unit) ? 'numeric' : 'decimal'}
                                   className="w-20 text-center"
                                   aria-label={`Quantidade de ${l.description}`}
                                 />
@@ -651,6 +654,9 @@ export function PDV() {
                   <p className="mt-1 text-xs text-[#8a5b00]">
                     O desconto foi limitado ao subtotal ({formatCurrency(subtotal)}).
                   </p>
+                )}
+                {toDecimal(discount) < 0 && (
+                  <p className="mt-1 text-xs text-[#8a5b00]">Desconto negativo não vale: o total segue sem desconto.</p>
                 )}
               </div>
               <div className="flex items-center justify-between border-t border-neutral-200 pt-3 text-base font-semibold text-neutral-900">

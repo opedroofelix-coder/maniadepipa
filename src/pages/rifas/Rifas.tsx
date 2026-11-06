@@ -1,14 +1,17 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { Download, Plus, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../contexts/AuthContext'
+import { downloadCsv } from '../../lib/csv'
+import { failureMessage } from '../../lib/errors'
 import { formatQuantity, isWholeUnit, parseDecimal, roundMoney, roundQuantity, wholeUnitMessage } from '../../lib/number'
 import type { Product, Raffle, RaffleItem, RaffleStatus } from '../../types/database'
 import {
   Badge,
   Button,
   Card,
+  ChoiceButton,
   ConfirmDialog,
   DecimalInput,
   EmptyState,
@@ -21,6 +24,7 @@ import {
   Select,
   StatTile,
   TableScroll,
+  Toast,
   formatCurrency,
 } from '../../components/ui'
 
@@ -42,6 +46,15 @@ const STATUS_LABEL: Record<RaffleStatus, string> = {
 const MAX_AMOUNT = 9_999_999_999.99
 
 const STALE_MESSAGE = 'Esta rifa já tinha sido encerrada ou cancelada em outra tela. A lista foi atualizada.'
+
+type Filter = 'todas' | RaffleStatus
+
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: 'todas', label: 'Todas' },
+  { id: 'aberta', label: 'Abertas' },
+  { id: 'encerrada', label: 'Encerradas' },
+  { id: 'cancelada', label: 'Canceladas' },
+]
 
 const STATUS_TONE: Record<RaffleStatus, 'brand' | 'good' | 'neutral'> = {
   aberta: 'brand',
@@ -72,6 +85,26 @@ function prizeSummary(raffle: RaffleWithItems): string {
 }
 
 /**
+ * Valores de uma linha da lista. Recebido e resultado só existem para rifa
+ * encerrada: a cancelada não entra nos totais, então não mostra valor nenhum.
+ */
+function raffleFigures(raffle: RaffleWithItems) {
+  const cost = prizeCost(raffle)
+  const received = raffle.status === 'encerrada' && raffle.amount_received !== null ? Number(raffle.amount_received) : null
+  return { cost, received, result: received === null ? null : roundMoney(received - cost) }
+}
+
+/** "Encerrada em 06/11" / "Cancelada em 06/11", para rifa que saiu de aberta. */
+function closedLabel(raffle: RaffleWithItems): string | null {
+  if (raffle.status === 'aberta' || !raffle.closed_at) return null
+  return `${STATUS_LABEL[raffle.status]} em ${format(new Date(raffle.closed_at), 'dd/MM/yyyy')}`
+}
+
+function resultClass(result: number) {
+  return result < 0 ? 'font-bold text-[#a12424]' : 'font-bold text-[#0a6b34]'
+}
+
+/**
  * Rifas com produtos do estoque. A venda dos números e o sorteio ficam no
  * outro sistema de rifa; aqui só entram os prêmios (que saem do estoque ao
  * criar a rifa e voltam se ela for cancelada) e o valor recebido no fim.
@@ -99,6 +132,8 @@ export function Rifas() {
   const [closing, setClosing] = useState(false)
 
   const [toCancel, setToCancel] = useState<RaffleWithItems | null>(null)
+  const [filter, setFilter] = useState<Filter>('todas')
+  const [toast, setToast] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -178,7 +213,7 @@ export function Rifas() {
 
     if (raffleError || !raffle) {
       console.error('raffles insert', raffleError)
-      setCreateError('Não foi possível criar a rifa.')
+      setCreateError(failureMessage(raffleError, 'Não foi possível criar a rifa.'))
       setSaving(false)
       return
     }
@@ -210,7 +245,7 @@ export function Rifas() {
       setCreateError(
         freshShortage
           ? `Estoque insuficiente: ${freshShortage}. O estoque mudou enquanto a rifa era criada; nada foi gravado.`
-          : 'Não foi possível reservar os prêmios. Nada foi gravado; confira o estoque e tente de novo.',
+          : failureMessage(itemsError, 'Não foi possível reservar os prêmios. Nada foi gravado; confira o estoque e tente de novo.'),
       )
       setSaving(false)
       return
@@ -218,6 +253,7 @@ export function Rifas() {
 
     setSaving(false)
     setCreateOpen(false)
+    setToast(`Rifa "${raffle.name}" criada. Os prêmios saíram do estoque.`)
     load()
   }
 
@@ -251,11 +287,12 @@ export function Rifas() {
     setClosing(false)
     if (error) {
       console.error('raffles close', error)
-      setCloseError('Não foi possível encerrar a rifa.')
+      setCloseError(failureMessage(error, 'Não foi possível encerrar a rifa.'))
       return
     }
     setToClose(null)
     if (!data || data.length === 0) setListError(STALE_MESSAGE)
+    else setToast(`Rifa "${toClose.name}" encerrada com ${formatCurrency(roundMoney(received))}.`)
     load()
   }
 
@@ -264,17 +301,19 @@ export function Rifas() {
     setListError(null)
     const { data, error } = await supabase
       .from('raffles')
-      .update({ status: 'cancelada' })
+      .update({ status: 'cancelada', closed_at: new Date().toISOString() })
       .eq('id', toCancel.id)
       .eq('status', 'aberta')
       .select('id')
+    const cancelled = toCancel
     setToCancel(null)
     if (error) {
       console.error('raffles cancel', error)
-      setListError('Não foi possível cancelar a rifa.')
+      setListError(failureMessage(error, 'Não foi possível cancelar a rifa.'))
       return
     }
     if (!data || data.length === 0) setListError(STALE_MESSAGE)
+    else setToast(`Rifa "${cancelled.name}" cancelada. Os prêmios voltaram ao estoque.`)
     load()
   }
 
@@ -286,6 +325,27 @@ export function Rifas() {
   const result = roundMoney(totalReceived - closedCost)
 
   const closePreview = toClose ? parseDecimal(amount) : NaN
+  const visible = filter === 'todas' ? raffles : raffles.filter((r) => r.status === filter)
+
+  function exportCsv() {
+    downloadCsv(`rifas-${format(new Date(), 'yyyy-MM-dd')}.csv`, [
+      ['Criada em', 'Rifa', 'Observação', 'Prêmios', 'Custo', 'Recebido', 'Resultado', 'Status', 'Encerrada/cancelada em'],
+      ...visible.map((r) => {
+        const { cost, received, result } = raffleFigures(r)
+        return [
+          format(new Date(r.created_at), 'dd/MM/yyyy'),
+          r.name,
+          r.notes ?? '',
+          prizeSummary(r),
+          cost,
+          received ?? '',
+          result ?? '',
+          STATUS_LABEL[r.status],
+          r.closed_at ? format(new Date(r.closed_at), 'dd/MM/yyyy') : '',
+        ]
+      }),
+    ])
+  }
 
   return (
     <div>
@@ -313,9 +373,26 @@ export function Rifas() {
       <Card>
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h3 className="text-sm font-semibold text-neutral-900">Rifas</h3>
-          <Button size="sm" onClick={openCreate} className="w-full sm:w-auto">
-            <Plus size={16} /> Nova rifa
-          </Button>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button size="sm" variant="secondary" onClick={exportCsv} disabled={visible.length === 0}>
+              <Download size={16} /> Exportar CSV
+            </Button>
+            {/* sem os produtos carregados o modal abria com a lista de prêmios vazia */}
+            <Button size="sm" onClick={openCreate} disabled={loading}>
+              <Plus size={16} /> Nova rifa
+            </Button>
+          </div>
+        </div>
+
+        <div role="group" aria-label="Filtrar por status" className="mb-4 flex flex-wrap gap-2">
+          {FILTERS.map((f) => {
+            const count = f.id === 'todas' ? raffles.length : raffles.filter((r) => r.status === f.id).length
+            return (
+              <ChoiceButton key={f.id} selected={filter === f.id} onClick={() => setFilter(f.id)} className="min-h-11 px-4 text-sm">
+                {f.label} ({count})
+              </ChoiceButton>
+            )
+          })}
         </div>
 
         {listError && <p className="mb-3 text-sm font-bold text-[#a12424]">{listError}</p>}
@@ -324,76 +401,133 @@ export function Rifas() {
           <Loader />
         ) : raffles.length === 0 ? (
           <EmptyState message="Nenhuma rifa cadastrada ainda." />
+        ) : visible.length === 0 ? (
+          <EmptyState message="Nenhuma rifa com esse status." />
         ) : (
-          <TableScroll>
-            <table className="w-full min-w-[880px] text-left text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
-                  <th className="py-2 pr-3">Criada em</th>
-                  <th className="py-2 pr-3">Rifa</th>
-                  <th className="py-2 pr-3">Prêmios</th>
-                  <th className="py-2 pr-3 text-right">Custo</th>
-                  <th className="py-2 pr-3 text-right">Recebido</th>
-                  <th className="py-2 pr-3 text-right">Resultado</th>
-                  <th className="py-2 pr-3">Status</th>
-                  <th className="py-2" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-neutral-100">
-                {raffles.map((r) => {
-                  const cost = prizeCost(r)
-                  const received = r.amount_received === null ? null : Number(r.amount_received)
-                  const rowResult = received === null ? null : roundMoney(received - cost)
-                  return (
-                    <tr key={r.id}>
-                      <td className="py-2.5 pr-3 whitespace-nowrap text-neutral-500">
-                        {format(new Date(r.created_at), 'dd/MM/yyyy')}
-                      </td>
-                      <td className="py-2.5 pr-3">
-                        <p className="font-medium text-neutral-900">{r.name}</p>
-                        {r.notes && <p className="text-xs text-neutral-500">{r.notes}</p>}
-                      </td>
-                      <td className="py-2.5 pr-3 text-neutral-600">{prizeSummary(r) || '—'}</td>
-                      <td className="py-2.5 pr-3 text-right whitespace-nowrap">{formatCurrency(cost)}</td>
-                      <td className="py-2.5 pr-3 text-right whitespace-nowrap">
-                        {received === null ? '—' : formatCurrency(received)}
-                      </td>
-                      <td
-                        className={
-                          rowResult === null
-                            ? 'py-2.5 pr-3 text-right'
-                            : rowResult < 0
-                              ? 'py-2.5 pr-3 text-right font-bold whitespace-nowrap text-[#a12424]'
-                              : 'py-2.5 pr-3 text-right font-bold whitespace-nowrap text-[#0a6b34]'
-                        }
-                      >
-                        {rowResult === null ? '—' : formatCurrency(rowResult)}
-                      </td>
-                      <td className="py-2.5 pr-3">
-                        <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
-                      </td>
-                      <td className="py-2.5 text-right whitespace-nowrap">
-                        {r.status === 'aberta' && (
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="secondary" onClick={() => openClose(r)}>
-                              Encerrar
-                            </Button>
-                            <Button size="sm" variant="danger-ghost" onClick={() => setToCancel(r)}>
-                              Cancelar
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </TableScroll>
+          <>
+            {/* celular: cartões empilhados, com as ações à vista (a tabela não cabe em 390px) */}
+            <ul className="space-y-3 lg:hidden">
+              {visible.map((r) => {
+                const { cost, received, result } = raffleFigures(r)
+                const closedText = closedLabel(r)
+                return (
+                  <li key={r.id} className="rounded-2xl border-2 border-[#d5e3f0] p-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-extrabold break-words text-[#0e2240]">{r.name}</p>
+                        <p className="text-xs font-semibold text-[#52607a]">
+                          Criada em {format(new Date(r.created_at), 'dd/MM/yyyy')}
+                          {closedText && ` · ${closedText.toLowerCase()}`}
+                        </p>
+                        {r.notes && <p className="mt-0.5 text-xs text-[#52607a]">{r.notes}</p>}
+                      </div>
+                      <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                    </div>
+                    <p className="mt-2 text-sm text-[#3b4a66]">{prizeSummary(r) || '—'}</p>
+                    {r.status === 'cancelada' ? (
+                      <p className="mt-2 text-xs font-semibold text-[#52607a]">Prêmios devolvidos ao estoque.</p>
+                    ) : (
+                      <dl className="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-[#f4f8fc] p-2 text-sm">
+                        <div>
+                          <dt className="text-xs font-semibold text-[#52607a]">Custo</dt>
+                          <dd className="font-bold text-[#0e2240]">{formatCurrency(cost)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-semibold text-[#52607a]">Recebido</dt>
+                          <dd className="font-bold text-[#0e2240]">{received === null ? '—' : formatCurrency(received)}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs font-semibold text-[#52607a]">Resultado</dt>
+                          <dd className={result === null ? 'font-bold text-[#0e2240]' : resultClass(result)}>
+                            {result === null ? '—' : formatCurrency(result)}
+                          </dd>
+                        </div>
+                      </dl>
+                    )}
+                    {r.status === 'aberta' && (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button size="sm" variant="secondary" onClick={() => openClose(r)}>
+                          Encerrar
+                        </Button>
+                        <Button size="sm" variant="danger-ghost" onClick={() => setToCancel(r)}>
+                          Cancelar
+                        </Button>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
+
+            <TableScroll className="hidden lg:block">
+              <table className="w-full min-w-[880px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500">
+                    <th className="py-2 pr-3">Criada em</th>
+                    <th className="py-2 pr-3">Rifa</th>
+                    <th className="py-2 pr-3">Prêmios</th>
+                    <th className="py-2 pr-3 text-right">Custo</th>
+                    <th className="py-2 pr-3 text-right">Recebido</th>
+                    <th className="py-2 pr-3 text-right">Resultado</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100">
+                  {visible.map((r) => {
+                    const { cost, received, result } = raffleFigures(r)
+                    const closedText = closedLabel(r)
+                    return (
+                      <tr key={r.id}>
+                        <td className="py-2.5 pr-3 whitespace-nowrap text-neutral-500">
+                          {format(new Date(r.created_at), 'dd/MM/yyyy')}
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <p className="font-medium text-neutral-900">{r.name}</p>
+                          {r.notes && <p className="text-xs text-neutral-500">{r.notes}</p>}
+                        </td>
+                        <td className="py-2.5 pr-3 text-neutral-600">{prizeSummary(r) || '—'}</td>
+                        <td className="py-2.5 pr-3 text-right whitespace-nowrap">
+                          {r.status === 'cancelada' ? '—' : formatCurrency(cost)}
+                        </td>
+                        <td className="py-2.5 pr-3 text-right whitespace-nowrap">
+                          {received === null ? '—' : formatCurrency(received)}
+                        </td>
+                        <td className={`py-2.5 pr-3 text-right whitespace-nowrap ${result === null ? '' : resultClass(result)}`}>
+                          {result === null ? '—' : formatCurrency(result)}
+                        </td>
+                        <td className="py-2.5 pr-3">
+                          <Badge tone={STATUS_TONE[r.status]}>{STATUS_LABEL[r.status]}</Badge>
+                          {closedText && (
+                            <p className="mt-1 text-xs whitespace-nowrap text-neutral-500">
+                              em {format(new Date(r.closed_at as string), 'dd/MM/yyyy')}
+                            </p>
+                          )}
+                        </td>
+                        <td className="py-2.5 text-right whitespace-nowrap">
+                          {r.status === 'aberta' && (
+                            <div className="flex justify-end gap-1">
+                              <Button size="sm" variant="secondary" onClick={() => openClose(r)}>
+                                Encerrar
+                              </Button>
+                              <Button size="sm" variant="danger-ghost" onClick={() => setToCancel(r)}>
+                                Cancelar
+                              </Button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </TableScroll>
+          </>
         )}
       </Card>
 
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Nova rifa" wide>
+      {/* enquanto grava, Esc e clique fora não fecham: o erro sumiria junto com o modal */}
+      <Modal open={createOpen} onClose={saving ? () => {} : () => setCreateOpen(false)} title="Nova rifa" wide>
         <div className="space-y-4">
           <div>
             <Label htmlFor={`${fieldId}-name`}>Nome da rifa</Label>
@@ -427,11 +561,14 @@ export function Rifas() {
                       onChange={(e) => updateLine(l.key, { productId: e.target.value })}
                     >
                       <option value="">Selecione…</option>
-                      {products.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} ({formatQuantity(Number(p.stock_quantity))} {p.unit})
-                        </option>
-                      ))}
+                      {products.map((p) => {
+                        const empty = Number(p.stock_quantity) <= 0
+                        return (
+                          <option key={p.id} value={p.id} disabled={empty}>
+                            {p.name} ({empty ? 'sem estoque' : `${formatQuantity(Number(p.stock_quantity))} ${p.unit}`})
+                          </option>
+                        )
+                      })}
                     </Select>
                   </div>
                   <div className="w-24 shrink-0">
@@ -439,6 +576,8 @@ export function Rifas() {
                       aria-label={`Quantidade do prêmio ${index + 1}`}
                       value={l.quantity}
                       onChange={(e) => updateLine(l.key, { quantity: e.target.value })}
+                      // produto contado em un: teclado só com números, sem vírgula
+                      inputMode={isWholeUnit(products.find((p) => p.id === l.productId)?.unit ?? '') ? 'numeric' : 'decimal'}
                     />
                   </div>
                   <IconButton
@@ -469,7 +608,7 @@ export function Rifas() {
         </div>
       </Modal>
 
-      <Modal open={toClose !== null} onClose={() => setToClose(null)} title="Encerrar rifa">
+      <Modal open={toClose !== null} onClose={closing ? () => {} : () => setToClose(null)} title="Encerrar rifa">
         {toClose && (
           <div className="space-y-4">
             <div className="text-sm font-semibold text-[#52607a]">
@@ -516,6 +655,8 @@ export function Rifas() {
         onConfirm={handleCancel}
         onClose={() => setToCancel(null)}
       />
+
+      <Toast message={toast} onDone={() => setToast(null)} />
     </div>
   )
 }
