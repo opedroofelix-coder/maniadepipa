@@ -25,6 +25,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const loadProfile = useCallback(async (userId: string) => {
     userIdRef.current = userId
+    // sem internet a leitura só falha depois de alguns segundos de tentativas:
+    // mostra o aviso na hora (o Layout tenta de novo quando a conexão volta)
+    if (!navigator.onLine) {
+      setProfileError(true)
+      setProfile(null)
+      setLoading(false)
+      return
+    }
     const { data, error } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle()
     // distinguir "falhou ao ler" de "não existe": só o primeiro caso vira erro
     // recuperável; sem essa diferença o app devolvia ao login em loop.

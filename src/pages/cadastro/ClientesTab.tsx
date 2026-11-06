@@ -65,6 +65,18 @@ export function ClientesTab() {
       setError('Informe o nome do cliente.')
       return
     }
+    // telefone e e-mail são opcionais, mas quando preenchidos precisam servir para contato
+    const phone = form.phone.trim()
+    const phoneDigits = phone.replace(/\D/g, '')
+    if (phone && (!/^[\d\s()+-]+$/.test(phone) || phoneDigits.length < 10 || phoneDigits.length > 13)) {
+      setError('Telefone inválido. Use DDD e número, ex.: (11) 99999-0000.')
+      return
+    }
+    const email = form.email.trim()
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('E-mail inválido. Use o formato nome@exemplo.com.')
+      return
+    }
     setSaving(true)
     const payload = {
       name: form.name.trim(),

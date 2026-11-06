@@ -1,6 +1,7 @@
 import { useEffect, useId, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
+import { sameName } from '../../lib/names'
 import type { Category } from '../../types/database'
 import { Button, Card, ConfirmDialog, EmptyState, IconButton, Input, Label, Loader, Modal } from '../../components/ui'
 
@@ -14,6 +15,8 @@ export function CategoriasTab() {
   const [error, setError] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
   const [toDelete, setToDelete] = useState<Category | null>(null)
+  // quantos produtos usam a categoria a remover; null enquanto confere
+  const [inUse, setInUse] = useState<number | null>(null)
 
   async function load() {
     setLoading(true)
@@ -27,7 +30,18 @@ export function CategoriasTab() {
   }, [])
 
   async function handleCreate() {
-    if (!name.trim()) return
+    // o Enter do campo também chama aqui: sem esta trava, Enter duas vezes salvava duas
+    if (saving) return
+    if (!name.trim()) {
+      setError('Informe o nome da categoria.')
+      return
+    }
+    // o banco só barra o nome idêntico; "pipas" e "Acessorios" passavam ao lado de "Pipas" e "Acessórios"
+    const existing = categories.find((c) => sameName(c.name, name))
+    if (existing) {
+      setError(`Já existe a categoria "${existing.name}".`)
+      return
+    }
     setSaving(true)
     const { error: saveError } = await supabase.from('categories').insert({ name: name.trim() })
     setSaving(false)
@@ -39,6 +53,13 @@ export function CategoriasTab() {
     setOpen(false)
     setError(null)
     load()
+  }
+
+  async function askDelete(category: Category) {
+    setToDelete(category)
+    setInUse(null)
+    const { data } = await supabase.from('products').select('id').eq('category_id', category.id)
+    setInUse(data?.length ?? 0)
   }
 
   async function handleDelete() {
@@ -81,7 +102,7 @@ export function CategoriasTab() {
           {categories.map((cat) => (
             <li key={cat.id} className="flex items-center justify-between gap-2 py-1">
               <span className="min-w-0 truncate text-sm text-neutral-800">{cat.name}</span>
-              <IconButton tone="danger" onClick={() => setToDelete(cat)} aria-label={`Remover ${cat.name}`}>
+              <IconButton tone="danger" onClick={() => askDelete(cat)} aria-label={`Remover ${cat.name}`}>
                 <Trash2 size={16} />
               </IconButton>
             </li>
@@ -110,7 +131,13 @@ export function CategoriasTab() {
       <ConfirmDialog
         open={toDelete !== null}
         title="Remover categoria"
-        message={`Remover a categoria "${toDelete?.name ?? ''}"? Os produtos vinculados ficarão sem categoria.`}
+        message={
+          inUse === null
+            ? `Conferindo quantos produtos usam "${toDelete?.name ?? ''}"…`
+            : inUse === 0
+              ? `Remover a categoria "${toDelete?.name ?? ''}"? Nenhum produto usa esta categoria.`
+              : `Remover a categoria "${toDelete?.name ?? ''}"? ${inUse === 1 ? '1 produto usa' : `${inUse} produtos usam`} esta categoria e ${inUse === 1 ? 'ficará' : 'ficarão'} sem categoria.`
+        }
         confirmLabel="Remover"
         onConfirm={handleDelete}
         onClose={() => setToDelete(null)}

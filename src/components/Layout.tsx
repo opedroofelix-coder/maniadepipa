@@ -33,6 +33,13 @@ export function Layout() {
     setMenuOpen(false)
   }, [location.pathname])
 
+  // perfil que não carregou por falta de internet: tenta de novo sozinho quando a conexão volta
+  useEffect(() => {
+    if (!profileError) return
+    window.addEventListener('online', retryProfile)
+    return () => window.removeEventListener('online', retryProfile)
+  }, [profileError, retryProfile])
+
   useEffect(() => {
     if (!menuOpen) return
     function onKeyDown(event: KeyboardEvent) {
@@ -49,12 +56,17 @@ export function Layout() {
   // sessão válida mas o perfil não carregou: mostrar o erro em vez de devolver
   // ao login em loop (o usuário já está autenticado, o login não resolveria)
   if (profileError) {
+    const offline = !navigator.onLine
     return (
       <div className="flex h-screen items-center justify-center p-6">
         <div className="max-w-sm text-center">
-          <p className="text-sm font-extrabold text-[#0e2240]">Não foi possível carregar seu perfil.</p>
+          <p className="text-sm font-extrabold text-[#0e2240]">
+            {offline ? 'Sem internet.' : 'Não foi possível carregar seu perfil.'}
+          </p>
           <p className="mt-1 text-sm font-semibold text-[#52607a]">
-            Você está conectado, mas o sistema não conseguiu ler seus dados de acesso. Verifique a conexão e tente de novo.
+            {offline
+              ? 'O sistema precisa da internet para mostrar os dados da loja. Assim que a conexão voltar, ele tenta de novo sozinho.'
+              : 'Você está conectado, mas o sistema não conseguiu ler seus dados de acesso. Verifique a conexão e tente de novo.'}
           </p>
           <div className="mt-4 flex justify-center gap-2">
             <Button onClick={retryProfile}>Tentar de novo</Button>
